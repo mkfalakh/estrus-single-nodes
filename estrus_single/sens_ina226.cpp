@@ -5,12 +5,12 @@
 
 INA226_WE ina226(INA226_I2C_ADDRESS);
 
-float shuntVoltage_mV = 0.0;
-float loadVoltage_V = 0.0;
-float busVoltage_V = 0.0;
-float current_mA = 0.0;
-float power_mW = 0.0;
-float selisih = 0.0;
+// float shuntVoltage_mV = 0.0;
+// float loadVoltage_V = 0.0;
+// float busVoltage_V = 0.0;
+// float current_mA = 0.0;
+// float power_mW = 0.0;
+// float selisih = 0.0;
 
 // voltCorrection = V multimeter / V ina226 = 0.972
 float voltCorrection = 0.972;
@@ -18,7 +18,7 @@ float voltCorrection = 0.972;
 void initINA226() {
   Wire.begin(I2C_SDA, I2C_SCL);
 
-  if (!ina.begin()) {
+  if (!ina226.init()) {
     Serial.println("❌ INA226 tidak terhubung!");
     while (1)
       ;
@@ -41,7 +41,7 @@ void initINA226() {
 
 float readVoltage() {
   // bus voltage
-  return ina226.getBusVoltage_V()
+  return ina226.getBusVoltage_V() * voltCorrection;
 }
 
 float readCurrent() {
