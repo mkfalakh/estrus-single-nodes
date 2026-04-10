@@ -1,5 +1,5 @@
 #include "config.h"
-#include "sensor_ina226.h"
+#include "sens_ina226.h"
 #include "rtc_manager.h"
 #include "logger.h"
 #include "web_server.h"
