@@ -5,8 +5,7 @@
 #define I2C_SCL 9
 
 // INA226
-#define SHUNT_RESISTOR 0.1
-#define MAX_CURRENT 5.0
+#define INA226_I2C_ADDRESS 0x40
 
 // Logging
 #define NODE_ID "NODE_001"
