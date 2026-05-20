@@ -3,5 +3,7 @@
 
 extern RTC_DS3231 rtc;
 
-void initRTC();
+bool initRTC();
 DateTime getNow();
+String todayDateStr(); // "YYYY-MM-DD"
+String nowStr(); // "YYYY-MM-DD HH:MM:SS"
