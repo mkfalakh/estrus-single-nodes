@@ -1,0 +1,31 @@
+#include "wifi_task.h"
+#include "wifi_manager.h"
+#include "logger.h"
+#include "system_state.h"
+
+#define WIFI_TIMEOUT_MS 300000UL // 5 menit
+
+void wifiTask(void *pv) {
+
+  while (true) {
+
+    if (wifiEnabled) {
+
+      unsigned long idleTime =
+        millis() - lastClientTime;
+
+      if (idleTime >= WIFI_TIMEOUT_MS) {
+
+        logToFile(
+          "📴 WiFi timeout -> OFF"
+        );
+
+        disableWiFiAP();
+      }
+    }
+
+    vTaskDelay(
+      5000 / portTICK_PERIOD_MS
+    );
+  }
+}

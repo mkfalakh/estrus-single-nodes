@@ -1,15 +1,54 @@
 #pragma once
 
+/*
+WIFI AP Creds: ESTRUS-NODE-00 | estrus2026 
+Dashboard Login: admin | estrus2026
+*/
+
+// Config Sensor Task
+#define SAMPLE_MS 100 // sampling 100ms
+#define WINDOW_MS 5000 // window 5 detik
+
+// Pin Proximity
+#define PROXI_MODE PROX_ACTIVE_LOW // atau PROX_ACTIVE_HIGH
+#define PROX1_PIN 7 // JANGAN DIUBAH
+#define PROX2_PIN 15 // JANGAN DIUBAH
+
+// Pin Buzzer/Alarm
+#define BUZZER_PIN 5 // atau pin 1 / 5
+#define BUZZER_PASSIVE false // false = tipe buzzer active | sesuaikan jenis buzzer yang dipakai (active/passive)
+#define BUZ_FREQ 2000 // untuk buzzer passive
+#define BUZ_RES 8 // untuk buzzer passive
+
+// Pin Button Alarm
+#define BUZZER_BUTTON_PIN 6 // atau pin 2 / 6
+
 // I2C
-#define I2C_SDA 8
-#define I2C_SCL 9
+#define I2C_SDA 8 // JANGAN DIUBAH
+#define I2C_SCL 9 // JANGAN DIUBAH
+
+// SPI - SD Card
+#define SD_SCK 12 // JANGAN DIUBAH
+#define SD_MISO 13 // JANGAN DIUBAH
+#define SD_MOSI 11 // JANGAN DIUBAH
+#define SD_CS 10 // JANGAN DIUBAH
+
+// Pin Battery Divider
+#define BATTDIV_PIN 4 // JANGAN DIUBAH
+
+// Pin LED RGB
+#define LED_R 16 // JANGAN DIUBAH
+#define LED_G 17 // JANGAN DIUBAH
+#define LED_B 18 // JANGAN DIUBAH
+#define LED_FREQ 5000
+#define LED_RES 8
 
 // INA226
-#define INA226_I2C_ADDRESS 0x40
+#define INA226_I2C_ADDRESS 0x40 // JANGAN DIUBAH
 
-// Logging
-#define NODE_ID "NODE_001"
-#define LOG_INTERVAL_MS 5000
+// Login Creds
+#define USER "admin"
+#define SALT "SAPI_SALT_2026" // JANGAN DIUBAH
+#define HASHED_PASS "97a813db36482c0678fe50ba536e6093247f6af278a9e77bab6e2a4db2a45eb9" // password untuk login dashboard | JANGAN DIUBAH
 
-// Queue
-#define LOG_QUEUE_SIZE 20
+// #define HASHED_PASS "97a813db36482c0678fe50ba536e6093247f6af278a9e77bab6e2a4db2a45eb9" // password untuk login dashboard | JANGAN DIUBAH
