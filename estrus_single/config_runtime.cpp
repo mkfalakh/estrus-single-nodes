@@ -99,8 +99,8 @@ void loadConfig() {
       sysConfig.activity_min = prefs.getInt("act_min", 5);
       sysConfig.balance_min = prefs.getFloat("bal_min", 0.3);
 
-      sysConfig.current_threshold = prefs.getFloat("curr_th", 500.0);
-      sysConfig.power_threshold = prefs.getFloat("pow_th", 2000.0);
+      sysConfig.current_threshold = prefs.getFloat("curr_th", 150.0);
+      sysConfig.power_threshold = prefs.getFloat("pow_th", 600.0);
       powerStats.energy_mWh = prefs.getFloat("energy", 0);
 
       prefs.end();
@@ -127,8 +127,8 @@ void loadConfig() {
     sysConfig.activity_min = 5;
     sysConfig.balance_min = 0.3;
 
-    sysConfig.current_threshold = 500.0;  // alert batas maksimal arus batre
-    sysConfig.power_threshold = 2000.0;   // alert batas maksimal power batre
+    sysConfig.current_threshold = 150.0;  // mA | alert batas maksimal arus batre
+    sysConfig.power_threshold = 600.0;   // mW | alert batas maksimal power batre
     powerStats.energy_mWh = 0;
 
     Serial.println("⚙️ Default Config Loaded!");
