@@ -1,6 +1,8 @@
 #pragma once
 
 /*
+Estrus Monitoring v2
+
 WIFI AP Creds: ESTRUS-NODE-00 | estrus2026 
 Dashboard Login: admin | estrus2026
 */
