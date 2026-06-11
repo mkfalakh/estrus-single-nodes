@@ -1,10 +1,21 @@
 #pragma once
 #include <Arduino.h>
 
-void initBuzzerAndBtn();
+enum BuzzerPattern {
+
+  BUZZER_NONE,
+
+  BUZZER_ESTRUS,
+
+  BUZZER_DOUBLE_CLICK,
+
+  BUZZER_STOP_CONFIRM
+};
+
+void initBuzzer();
 void checkIntervalTrigger();
 
-void buttonTask(void *pv);
 void buzzerTask(void *pv);
 
-bool buttonPressed();
+void buzzerPlay(BuzzerPattern pattern);
+void buzzerStop();

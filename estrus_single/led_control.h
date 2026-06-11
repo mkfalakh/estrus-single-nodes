@@ -5,6 +5,7 @@ enum LedState {
   LED_NORMAL,
   LED_LOW_BAT,
   LED_ALARM,
+  LED_DIRTY,
   LED_ERROR
 };
 

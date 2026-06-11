@@ -1,9 +1,20 @@
 #include "rtc_manager.h"
 #include "system_state.h"
 #include "logger.h"
+#include "config_runtime.h"
 
 #define TZ_OFFSET 7 * 3600
 RTC_DS3231 rtc;
+
+uint8_t getPartitionIndex() {
+
+  DateTime t = getNow();
+
+  return (
+    t.hour() /
+    sysConfig.partition_hours
+  );
+}
 
 DateTime getNow() {
   // return rtc.now();
@@ -16,7 +27,7 @@ DateTime getNow() {
 
 String nowStr() {
   DateTime now = getNow();
-  char buf[20];
+  char buf[24];
   snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
            now.year(), now.month(), now.day(),
            now.hour(), now.minute(), now.second());

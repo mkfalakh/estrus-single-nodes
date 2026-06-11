@@ -69,6 +69,10 @@ void watchdogTask(void* pv) {
       "wifiTask",
       wifiTaskHandle);
 
+    printTask(
+      "Cleanup",
+      cleanupStorageTaskHandle);
+
     // Serial.printf(
     //   "Heap:%u | PSRAM:%u\n",
     //   ESP.getFreeHeap(),

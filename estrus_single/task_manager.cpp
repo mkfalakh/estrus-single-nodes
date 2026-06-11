@@ -2,10 +2,12 @@
 #include "task_monitor.h"
 #include "led_control.h"
 #include "buzzer.h"
+#include "button.h"
 #include "csv_writer.h"
 #include "logger.h"
 #include "wifi_task.h"
 #include "sens_proximity.h"
+#include "storage_cleanup.h"
 
 TaskHandle_t sensorTaskHandle = NULL;
 TaskHandle_t csvTaskHandle = NULL;
@@ -14,6 +16,7 @@ TaskHandle_t ledTaskHandle = NULL;
 TaskHandle_t buzzerTaskHandle = NULL;
 TaskHandle_t buttonTaskHandle = NULL;
 TaskHandle_t wifiTaskHandle = NULL;
+TaskHandle_t cleanupStorageTaskHandle = NULL;
 
 TaskHandle_t watchdogTaskHandle = NULL;
 
@@ -105,6 +108,18 @@ void startTasks() {
     1,
     &wifiTaskHandle,
     0);
+
+  // =====================================
+  // CLEANUP STORAGE
+  // =====================================
+  xTaskCreatePinnedToCore(
+    cleanupStorageTask,
+    "Cleanup",
+    4096,
+    NULL,
+    1,
+    &cleanupStorageTaskHandle,
+    1);
 
   // =====================================
   // WATCHDOG MONITOR

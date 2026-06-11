@@ -1,12 +1,36 @@
 #include "system_state.h"
+#include "storage_stats.h"
 
 SystemState SYS = {
-  false, false, false,  // sd, rtc, sensor | default: false,false,false
-  0, 0, 0, 0,           // battery, voltage, current, power | default: 0,0,0,0
-  0, 0, 0,              // a1, a2, total | default: 0,0,0
-  0, false,             // score, estrus | default: 0,false
-  false, 0              // buzzer/alarm, last_alarm_ts | default: false,0
+
+  .sd_ok = false,
+  .rtc_ok = false,
+  .sensor_ok = false,
+  .sensor_dirty = false,
+
+  .battery_pct = 0,
+  .voltage = 0,
+  .current = 0,
+  .power = 0,
+
+  .sensor1 = false,
+  .sensor2 = false,
+  .sensor1_dirty = false,
+  .sensor2_dirty = false,
+
+  .current_rate = 0,
+  .baseline_rate = 0,
+  .deviation_pct = 0,
+  .estrus = false,
+  .partition = 0,
+  .baseline_samples = 0,
+
+  .buzzer_active = false,
+  .alarm_ack = false,
+  .last_alarm_ts = 0
 };
+
+static bool lastEstrus = false;
 
 // ========================
 // WRITE
@@ -28,27 +52,50 @@ void sysSetPower(float pct, float v, float c, float p) {
   SYS.power = p;
 }
 
-void sysSetActivity(int a1, int a2) {
-  SYS.a1 = a1;
-  SYS.a2 = a2;
-  SYS.total = a1 + a2;
+void sysSetEstrusResult(
+  const EstrusResult &r) {
+
+  SYS.current_rate =
+    r.current_rate;
+
+  SYS.baseline_rate =
+    r.baseline_rate;
+
+  SYS.deviation_pct =
+    r.deviation_pct;
+
+  SYS.partition =
+    r.partition;
+
+  SYS.baseline_samples =
+    r.baseline_samples;
+
+  SYS.estrus =
+    r.estrus;
+
+  if (r.valid && r.estrus && !lastEstrus) {
+
+    sysStartAlarm();
+  }
+
+  lastEstrus = r.estrus;
 }
 
-void sysSetModel(float score, bool estrus) {
-  SYS.score = score;
-  SYS.estrus = estrus;
+void sysSetSensorState(bool s1, bool s2, bool d1, bool d2) {
 
-  // jika estrus bunyikan alarm
-  // if (estrus) {
-  //   sysTriggerAlarm();
-  // }
+  SYS.sensor1 = s1;
+  SYS.sensor2 = s2;
+
+  SYS.sensor1_dirty = d1;
+  SYS.sensor2_dirty = d2;
 }
 
 // ========================
 // ALARM CONTROL
 // ========================
-void sysTriggerAlarm() {
+void sysStartAlarm() {
   SYS.buzzer_active = true;
+
   SYS.last_alarm_ts = millis();
 }
 
@@ -56,15 +103,30 @@ void sysStopAlarm() {
   SYS.buzzer_active = false;
 }
 
+void acknowledgeAlarm() {
+  SYS.alarm_ack = true;
+
+  sysStopAlarm();
+}
+
+void resetAlarmAcknowledgement() {
+  SYS.alarm_ack = false;
+}
+
+bool isAlarmAcknowledged() {
+  return SYS.alarm_ack;
+}
+
 // ========================
-// READ
+// READ (HELPER)
 // ========================
+// HEALTH
 bool sysIsError() {
   return (!SYS.sd_ok || !SYS.rtc_ok || !SYS.sensor_ok);
 }
 
 bool sysIsLowBattery() {
-  return (SYS.battery_pct < 20);
+  return (SYS.battery_pct < 20);  // masih hardcode. bisa dipindah jadi config (sysConfig.low_battery_pct).
 }
 
 bool sysIsAlarm() {
@@ -75,21 +137,43 @@ bool sysIsEstrus() {
   return SYS.estrus;
 }
 
+void sysSetSensorHealth(bool ok) {
+
+  SYS.sensor_ok = ok;
+}
+
+void sysSetSensorDirty(bool dirty) {
+
+  SYS.sensor_dirty = dirty;
+}
+
+bool sysIsSensorDirty() {
+
+  return SYS.sensor_dirty;
+}
+
+// MODEL
+float sysGetDeviationPct() {
+  return SYS.deviation_pct;
+}
+
+float sysGetCurrentRate() {
+  return SYS.current_rate;
+}
+
+float sysGetBaselineRate() {
+  return SYS.baseline_rate;
+}
+
 // ========================
-// WIFI AP
+// SYS WIFI
 // ========================
-bool wifiEnabled = true;
-unsigned long lastClientTime = 0;
 static unsigned long wifiWakeTs = 0;
 
 void sysTriggerWifiWake() {
-
   wifiWakeTs = millis();
 }
 
 bool sysWifiWakeActive() {
-
-  return (
-    millis() - wifiWakeTs < 2000);
+  return (millis() - wifiWakeTs < 2000);
 }
-

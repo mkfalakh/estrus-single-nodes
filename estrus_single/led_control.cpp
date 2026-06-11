@@ -46,12 +46,23 @@ void setLED(uint8_t r, uint8_t g, uint8_t b) {
 void updateLedFromSystem() {
 
   if (sysIsError()) {
+
     ledState = LED_ERROR;
+
+  } else if (sysIsSensorDirty()) {
+
+    ledState = LED_DIRTY;
+
   } else if (sysIsLowBattery()) {
+
     ledState = LED_LOW_BAT;
+
   } else if (sysIsAlarm()) {
+
     ledState = LED_ALARM;
+
   } else {
+
     ledState = LED_NORMAL;
   }
 
@@ -95,10 +106,17 @@ void ledTask(void *pv) {
     switch (ledState) {
 
       // ====================
-      // NORMAL (HIJAU)
+      // NORMAL (HIJAU NYALA TERUS)
       // ====================
       case LED_NORMAL:
         setLED(0, 255, 0);
+        break;
+
+      // ====================
+      // SENSOR DIRTY (MERAH NYALA TERUS)
+      // ====================
+      case LED_DIRTY:
+        setLED(255, 0, 0);
         break;
 
       // ====================
@@ -127,7 +145,7 @@ void ledTask(void *pv) {
         break;
 
       // ====================
-      // ALARM (BIRU BLINK 1x)
+      // ALARM (BIRU BLINK TERUS)
       // ====================
       case LED_ALARM:
 
