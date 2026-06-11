@@ -1,57 +1,116 @@
 #include "csv_reverse.h"
 
-int readLastLines(File &file, char lines[][128], int maxLines) {
+int readCsvPage(File &file,
+                char (*lines)[128],
+                int page,
+                int limit,
+                bool &hasNext) {
+
+  hasNext = false;
+
+  if (!file || limit <= 0 || page < 0) {
+    return 0;
+  }
+
+  const int BUFFER_SIZE = 128;
 
   int fileSize = file.size();
-  if (fileSize <= 0) return 0;
 
-  int lineCount = 0;
+  if (fileSize <= 0) {
+    return 0;
+  }
+
+  int startIndex = page * limit;
+  int endIndex = startIndex + limit;
+
+  int foundLines = 0;
+  int copiedLines = 0;
+
+  char buffer[BUFFER_SIZE];
   int charIndex = 0;
 
-  char buffer[128];
   memset(buffer, 0, sizeof(buffer));
 
-  // mulai dari akhir file
+  // baca dari akhir file
   for (int pos = fileSize - 1; pos >= 0; pos--) {
 
     file.seek(pos);
+
     char c = file.read();
 
+    // akhir baris ditemukan
     if (c == '\n' || pos == 0) {
 
-      // kalau awal file, tambahkan char terakhir
+      // jika awal file, masukkan karakter terakhir
       if (pos == 0 && c != '\n') {
-        buffer[charIndex++] = c;
-      }
 
-      // reverse buffer (karena kebalik)
-      for (int i = 0; i < charIndex / 2; i++) {
-        char tmp = buffer[i];
-        buffer[i] = buffer[charIndex - i - 1];
-        buffer[charIndex - i - 1] = tmp;
+        if (charIndex < BUFFER_SIZE - 1) {
+          buffer[charIndex++] = c;
+        }
       }
-
-      buffer[charIndex] = '\0';
 
       if (charIndex > 0) {
-        strcpy(lines[lineCount], buffer);
-        lineCount++;
 
-        if (lineCount >= maxLines) break;
+        // reverse buffer
+        for (int i = 0; i < charIndex / 2; i++) {
+
+          char tmp = buffer[i];
+
+          buffer[i] = buffer[charIndex - 1 - i];
+
+          buffer[charIndex - 1 - i] = tmp;
+        }
+
+        buffer[charIndex] = '\0';
+
+        // skip header CSV
+        if (strncmp(buffer,
+                    "node_id,",
+                    8)
+            != 0) {
+
+          // sudah masuk halaman yang diminta
+          if (foundLines >= startIndex && foundLines < endIndex) {
+
+            strncpy(lines[copiedLines],
+                    buffer,
+                    127);
+
+            lines[copiedLines][127] = '\0';
+
+            copiedLines++;
+          }
+
+          foundLines++;
+
+          // cek apakah masih ada data setelah halaman ini
+          if (foundLines > endIndex) {
+
+            hasNext = true;
+
+            break;
+          }
+        }
       }
 
       // reset buffer
       charIndex = 0;
-      memset(buffer, 0, sizeof(buffer));
 
+      memset(buffer, 0, sizeof(buffer));
     } else {
-      if (charIndex < 127) {
+
+      // simpan karakter jika buffer belum penuh
+      if (c != '\r' && charIndex < BUFFER_SIZE - 1) {
+
         buffer[charIndex++] = c;
       }
     }
 
-    yield();  // 🔥 anti WDT
+    // cegah watchdog
+    if ((pos % 512) == 0) {
+      yield();
+    }
   }
 
-  return lineCount;
+  return copiedLines;
 }

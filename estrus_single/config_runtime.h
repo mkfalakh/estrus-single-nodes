@@ -1,28 +1,31 @@
+#include <stdint.h>
 #pragma once
 #include <Arduino.h>
 
 #define NODE_ID_MAX 16
+#define ANIMAL_ID_MAX 16
 
 typedef struct {
   // ===== DEVICE =====
   char node_id[NODE_ID_MAX];
   bool prox_active_low;  // LOW / HIGH
-  int interval_hours;
-  bool buzzer_enabled;
+  // int interval_hours;
+  bool alarm_enabled;
 
   // ===== BATTERY ALERT =====
   float current_threshold;
   float power_threshold;
 
   // ===== MODEL PARAMETER =====
-  float score_threshold;  // 🔥 utama
-  float ratio_trigger;    // R > ?
-  int persist_required;   // berapa kali berturut-turut
-  float ema_alpha;        // adaptasi baseline
+  char animal_id[ANIMAL_ID_MAX];
+  uint16_t record_interval_sec;
+  uint8_t retention_days;
+  uint8_t partition_hours;
+  float estrus_threshold_pct;
+  bool stop_after_alarm;
 
-  // ===== SENSOR =====
-  int activity_min;   // minimal activity valid
-  float balance_min;  // a1 vs a2 ratio
+  uint16_t min_baseline_samples;
+  uint16_t dirty_timeout_samples;
 
 } SystemConfig;
 
@@ -34,6 +37,9 @@ extern unsigned long restartAt;
 bool setNodeId(const String &id);
 extern bool isValidNodeId(const String &id);
 // String getNodeId();
+
+bool setAnimalId(const String &id);
+extern bool isValidAnimalId(const String &id);
 
 void loadConfig();
 void saveConfig();

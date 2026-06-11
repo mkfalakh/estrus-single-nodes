@@ -7,6 +7,9 @@
 #include <WiFi.h>
 #include <Arduino.h>
 
+bool wifiEnabled = true;
+unsigned long lastClientTime = 0;
+
 const char* WIFI_PASSWORD = "estrus2026";
 
 void initWiFi() {

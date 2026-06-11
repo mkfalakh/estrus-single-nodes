@@ -34,7 +34,7 @@ void setup() {
   // INIT PIN HARDWARE
   // =========================
   initLED();
-  initBuzzerAndBtn();
+  initBuzzer();
   initRTC();  // sysSetRTC()
 
   initLogger();
@@ -75,13 +75,13 @@ void loop() {
 
   handleWebServer();
   cleanupSessions();
-  checkIntervalTrigger();
+  // checkIntervalTrigger();
 
   // =========================
   // DEBUG SYSTEM
   // =========================
-  static unsigned long last = 0;
-  if (millis() - last > 5000) {
+  static unsigned long lastDebug = 0;
+  if (millis() - lastDebug > 60000) {
 
     // logToFile(
     //   "LOGGER STACK: %u",
@@ -104,7 +104,7 @@ void loop() {
 
     // logToFile("===================================");
 
-    last = millis();
+    lastDebug = millis();
   }
 
   if (pendingRestart && millis() > restartAt) {

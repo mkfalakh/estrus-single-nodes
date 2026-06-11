@@ -8,138 +8,87 @@
 #include "power_monitor.h"
 #include "rtc_manager.h"
 #include "system_state.h"
+#include "sensor_data.h"
+#include "estrus_model.h"
+#include "storage_stats.h"
 #include <Wire.h>
 #include <Arduino.h>
 
 static bool proxActiveLow = true;
 
-// ========================
-// MODEL STATE
-// ========================
-typedef struct {
-  float baseline;
-  int persist;
-  int cooldown;
-  int prevA;
-  float lastScore;
-} EstrusModel;
+static uint16_t sensor1StableCount = 0;
+static uint16_t sensor2StableCount = 0;
 
-static EstrusModel em = { 0 };
+static bool sensor1Dirty = false;
+static bool sensor2Dirty = false;
 
-// ========================
-// CONFIG
-// ========================
-float EMA_ALPHA = sysConfig.ema_alpha;
-float SCORE_THRESHOLD = sysConfig.score_threshold;
-float RATIO_TRIGGER = sysConfig.ratio_trigger;
-int PERSIST_REQ = sysConfig.persist_required;
+static bool lastSensor1 = false;
+static bool lastSensor2 = false;
 
-// ========================
-// GET SCORE
-// ========================
-float getLastEstrusScore() {
-  return em.lastScore;
+bool isSensor1Dirty() {
+  return sensor1Dirty;
+}
+
+bool isSensor2Dirty() {
+  return sensor2Dirty;
 }
 
 // ========================
-// DETECTOR
+// CHECK SENSOR DIRTY
 // ========================
-bool detectEstrusAdvanced(int a1, int a2, int hour) {
+void updateDirtyDetection(bool s1, bool s2) {
 
-  int A = a1 + a2;
+  // SENSOR 1
+  if (s1 == lastSensor1) {
 
-  // ========================
-  // INIT BASELINE
-  // ========================
-  if (em.baseline <= 0) {
-    em.baseline = A;
-  }
+    if (sensor1StableCount < UINT16_MAX) {
+      sensor1StableCount++;
+    }
 
-  // ========================
-  // EMA BASELINE
-  // ========================
-  em.baseline = (EMA_ALPHA * A) + (1.0f - EMA_ALPHA) * em.baseline;
-
-  float base = max(em.baseline, 1.0f);
-
-  // ========================
-  // FEATURE
-  // ========================
-
-  // ratio
-  float R = A / base;
-
-  // balance
-  float B = 0;
-  if (max(a1, a2) > 0) {
-    B = (float)min(a1, a2) / max(a1, a2);
-  }
-
-  // trend
-  float T = (A - em.prevA) / base;
-  em.prevA = A;
-
-  // persist logic
-  if (R > RATIO_TRIGGER) {
-    em.persist++;
   } else {
-    if (em.persist > 0) em.persist--;
+
+    sensor1StableCount = 0;
+
+    sensor1Dirty = false;
+
+    lastSensor1 = s1;
   }
 
-  // time weight
-  float W = (hour >= 20 || hour <= 5) ? 1.2f : 1.0f;
+  if (sensor1StableCount >= sysConfig.dirty_timeout_samples) {
 
-  // ========================
-  // NORMALISASI
-  // ========================
-  float Rn = min(R / 3.0f, 1.0f);
-  float Bn = B;
-  float Tn = constrain(T, 0.0f, 1.0f);
-  float Pn = min(em.persist / 5.0f, 1.0f);
-
-  // ========================
-  // SCORE
-  // ========================
-  float score =
-    0.35f * Rn + 0.25f * Bn + 0.20f * Pn + 0.15f * Tn + 0.05f * W;
-
-  em.lastScore = score;
-
-  // ========================
-  // COOLDOWN
-  // ========================
-  if (em.cooldown > 0) {
-    em.cooldown--;
-    return false;
+    sensor1Dirty = true;
   }
 
-  // ========================
-  // DECISION
-  // ========================
-  if (score > SCORE_THRESHOLD && em.persist >= PERSIST_REQ) {
-    em.cooldown = 50;
-    em.persist = 0;
-    return true;
+  // SENSOR 2
+  if (s2 == lastSensor2) {
+
+    if (sensor2StableCount < UINT16_MAX) {
+      sensor2StableCount++;
+    }
+
+  } else {
+
+    sensor2StableCount = 0;
+
+    sensor2Dirty = false;
+
+    lastSensor2 = s2;
   }
 
-  // ========================
-  // DEBUG
-  // ========================
-  // logToFile(
-  //   "A:%d|%d | T:%d | Score:%.2f | Persist:%d | Baseline:%.2f\n",
-  //   a1, a2, A,
-  //   score,
-  //   em.persist,
-  //   em.baseline);
+  if (sensor2StableCount >= sysConfig.dirty_timeout_samples) {
 
-  // logToFile(
-  //   "A:%d Score:%.2f Persist:%d Baseline:%.2f\n",
-  //   a1 + a2,
-  //   score,
-  //   em.persist,
-  //   em.baseline);
+    sensor2Dirty = true;
+  }
+}
 
-  return false;
+// RESET DIRTY DETECTION
+void resetDirtyDetection() {
+
+  sensor1Dirty = false;
+  sensor2Dirty = false;
+
+  sensor1StableCount = 0;
+  sensor2StableCount = 0;
 }
 
 // ========================
@@ -147,51 +96,42 @@ bool detectEstrusAdvanced(int a1, int a2, int hour) {
 // ========================
 void sensorTask(void *pv) {
 
-  int a1 = 0;
-  int a2 = 0;
-
-  unsigned long lastSample = millis();
-  unsigned long windowStart = millis();
+  static unsigned long lastDebug = 0;
+  static unsigned long lastRtcLog = 0;
+  unsigned long lastSample = 0;
   unsigned long lastPowerTs = millis();
-  unsigned long lastDebug = 0;
-
-  SensorData data;
 
   while (true) {
 
     unsigned long now = millis();
 
-    // =====================================
-    // SENSOR SAMPLING
-    // =====================================
-    if (now - lastSample >= SAMPLE_MS) {
+    if (now - lastSample >= (sysConfig.record_interval_sec * 1000UL)) {
 
       lastSample = now;
 
-      if (readProx1()) a1++;
-      if (readProx2()) a2++;
-    }
+      // ==========================
+      // SENSOR STATE
+      // ==========================
+      bool s1 = readProx1();
+      bool s2 = readProx2();
 
-    // =====================================
-    // WINDOW COMPLETE
-    // =====================================
-    if (now - windowStart >= WINDOW_MS) {
+      updateDirtyDetection(s1, s2);
 
-      // =====================================
-      // TOTAL ACTIVITY
-      // =====================================
-      int total = a1 + a2;
+      bool d1 = isSensor1Dirty();
+      bool d2 = isSensor2Dirty();
 
-      // =====================================
-      // POWER READ
-      // =====================================
+      sysSetSensorDirty(d1 || d2);
+
+      // standing definition
+      bool standing = (s1 || s2);
+
+      // ==========================
+      // POWER
+      // ==========================
       float voltage = readVoltage();
       float current = readCurrent();
-      float power = readPower();
+      float power = voltage * current;
 
-      // =====================================
-      // POWER STATS UPDATE
-      // =====================================
       float dt =
         (now - lastPowerTs) / 1000.0f;
 
@@ -202,27 +142,66 @@ void sensorTask(void *pv) {
         voltage,
         dt);
 
-      // =====================================
-      // RTC TIME
-      // =====================================
-      DateTime t = getNow();
+      // ==========================
+      // ESTRUS RESULT
+      // ==========================
+      EstrusResult result;
 
-      // =====================================
-      // ESTRUS MODEL
-      // =====================================
-      bool estrus =
-        detectEstrusAdvanced(
-          a1,
-          a2,
-          t.hour());
+      memset(
+        &result,
+        0,
+        sizeof(result));
 
-      float score =
-        getLastEstrusScore();
+      // ==========================
+      // RTC CHECK
+      // ==========================
+      bool rtcValid = false;
 
-      // =====================================
-      // UPDATE SYSTEM STATE
-      // =====================================
-      sysSetActivity(a1, a2);
+      DateTime t;
+
+      if (SYS.rtc_ok) {
+
+        t = getNow();
+
+        rtcValid =
+          (t.year() >= 2026);
+
+        if (!rtcValid && millis() - lastRtcLog >= 60000) {
+
+          logToFile(
+            "⚠️ RTC year invalid: %d",
+            t.year());
+
+          lastRtcLog = millis();
+        }
+      }
+
+      // ==========================
+      // SYSTEM CORE
+      // ==========================
+
+      if (rtcValid) {
+
+        // Partition Event
+        checkPartitionTransition();
+
+        // Standing Stats
+        updatePartitionStats(standing);
+
+        // Evaluate Estrus
+        result = evaluateEstrus();
+      }
+
+      // ==========================
+      // SYSTEM STATE
+      // ==========================
+      sysSetSensorState(
+        s1,
+        s2,
+        d1,
+        d2);
+
+      sysSetSensorHealth(!(d1 && d2));
 
       sysSetPower(
         powerStats.percentage,
@@ -230,95 +209,102 @@ void sensorTask(void *pv) {
         current,
         power);
 
-      sysSetModel(
-        score,
-        estrus);
+      if (rtcValid) {
 
-      // =====================================
-      // BUILD SENSOR DATA
-      // =====================================
-      memset(
-        &data,
-        0,
-        sizeof(SensorData));
+        sysSetEstrusResult(result);
+      }
 
-      snprintf(
-        data.timestamp,
-        sizeof(data.timestamp),
-        "%04d-%02d-%02d %02d:%02d:%02d",
-        t.year(),
-        t.month(),
-        t.day(),
-        t.hour(),
-        t.minute(),
-        t.second());
+      // ALARM HANDLING
+      if (rtcValid && result.estrus && sysConfig.alarm_enabled && !sysIsAlarm() && !(sysConfig.stop_after_alarm && isAlarmAcknowledged())) {
 
-      data.voltage = voltage;
-      data.current = current;
-      data.power = power;
+        sysStartAlarm();
+      }
 
-      data.battery_percent =
-        powerStats.percentage;
+      // ==========================
+      // BUILD CSV DATA
+      // ==========================
+      if (rtcValid) {
+        SensorData data;
 
-      data.activity_sensor1 = a1;
-      data.activity_sensor2 = a2;
-      data.total_activity = total;
+        memset(
+          &data,
+          0,
+          sizeof(data));
 
-      data.score = score;
-      data.estrus = estrus;
+        snprintf(
+          data.timestamp,
+          sizeof(data.timestamp),
+          "%04d-%02d-%02d %02d:%02d:%02d",
+          t.year(),
+          t.month(),
+          t.day(),
+          t.hour(),
+          t.minute(),
+          t.second());
 
-      // =====================================
-      // SEND TO CSV WRITER
-      // =====================================
-      if (sensorQueue) {
+        data.sensor1_state = s1;
+        data.sensor2_state = s2;
+        data.sensor1_dirty = d1;
+        data.sensor2_dirty = d2;
 
+        data.deviation_pct = result.deviation_pct;
+        data.estrus = result.estrus;
+
+        data.voltage = voltage;
+        data.current = current;
+        data.battery_pct = powerStats.percentage;
+
+        // ==========================
+        // QUEUE CSV
+        // ==========================
         if (xQueueSend(
               sensorQueue,
               &data,
-              0)
+              pdMS_TO_TICKS(100))
             != pdTRUE) {
 
-          Serial.println(
-            "⚠️ Sensor Queue Full");
+          logToFile(
+            "⚠️ sensorQueue full");
         }
       }
 
-      // =====================================
-      // PERIODIC DEBUG
-      // =====================================
-      if (now - lastDebug >= 5000) {
-
-        lastDebug = now;
-
-        logToFile("=============  DATA  ==============");  //35
-
+      // ==========================
+      // DEBUG
+      // ==========================
+      if (millis() - lastDebug >= 60000) {
         logToFile(
-          "🐄 A1:%d A2:%d T:%d Score:%.2f Estrus:%d Bat:%.1f%%",
-          a1,
-          a2,
-          total,
-          score,
-          estrus,
+          "S:%d/%d D:%d/%d "
+          "| Rate:%.1f%% "
+          "Base:%.1f%% "
+          "Dev:%.1f%% "
+          "| Estrus:%d "
+          "| V:%.1f%% I:%.1f%% W:%.1f%% Bat:%.1f%%",
+
+          s1,
+          s2,
+
+          d1,
+          d2,
+
+          result.current_rate * 100.0f,
+          result.baseline_rate * 100.0f,
+
+          result.deviation_pct,
+          result.estrus,
+
+          voltage,
+          current,
+          power,
           powerStats.percentage);
+
+        lastDebug = millis();
       }
-
-      // =====================================
-      // RESET WINDOW
-      // =====================================
-      a1 = 0;
-      a2 = 0;
-
-      windowStart = now;
     }
 
-    // =====================================
-    // WATCHDOG SAFE
-    // =====================================
     vTaskDelay(
-      10 / portTICK_PERIOD_MS);
+      pdMS_TO_TICKS(100));
   }
 }
-
 
 // SET MODE SENSOR PROXIMITY
 void setProximityActiveLow(bool activeLow) {

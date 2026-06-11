@@ -15,6 +15,45 @@ unsigned long restartAt = 0;
 //   return String(sysConfig.node_id);
 // }
 
+// Validasi Animal ID
+bool isValidAnimalId(const String &id) {
+
+  // panjang aman
+  if (id.length() < 3 || id.length() >= ANIMAL_ID_MAX)
+    return false;
+
+  // hanya huruf angka dash underscore
+  for (size_t i = 0; i < id.length(); i++) {
+
+    char c = id[i];
+
+    bool ok =
+      isAlphaNumeric(c) || c == '-' || c == '_';
+
+    if (!ok)
+      return false;
+  }
+
+  return true;
+}
+
+bool setAnimalId(const String &id) {
+
+  if (!isValidAnimalId(id)) {
+    return false;
+  }
+
+  memset(sysConfig.animal_id, 0, ANIMAL_ID_MAX);
+
+  strncpy(
+    sysConfig.animal_id,
+    id.c_str(),
+    ANIMAL_ID_MAX - 1);
+
+  return true;
+}
+
+// Validasi Node ID
 bool isValidNodeId(const String &id) {
 
   // panjang aman
@@ -52,6 +91,7 @@ bool setNodeId(const String &id) {
   return true;
 }
 
+// Load Config
 void loadConfig() {
 
   bool useDefault = false;
@@ -79,26 +119,38 @@ void loadConfig() {
       useDefault = true;
     } else {
 
-      // 🔥 load config
-      String tmp = prefs.getString("node_id", "NODE-01");
-      if (!setNodeId(tmp)) {
+      // Load Config | Device
+      // NODE ID
+      String tmp_node = prefs.getString("node_id", "NODE-01");
+      if (!setNodeId(tmp_node)) {
         setNodeId("NODE-01");
 
         logToFile("⚠️ Invalid Node ID → reset default");
       }
 
+      // ANIMAL ID
+      String tmp_animal = prefs.getString("animal_id", "COW-01");
+      if (!setAnimalId(tmp_animal)) {
+        setAnimalId("COW-01");
+
+        logToFile("⚠️ Invalid Cow ID → reset default");
+      }
+
       sysConfig.prox_active_low = prefs.getBool("prox_low", true);
-      sysConfig.interval_hours = prefs.getInt("interval", 1);
-      sysConfig.buzzer_enabled = prefs.getBool("buzzer", true);
+      sysConfig.alarm_enabled = prefs.getBool("alarm", true);
+      // prefs.getString("animal_id", "COW-01").toCharArray(sysConfig.animal_id, sizeof(sysConfig.animal_id));
+      // sysConfig.interval_hours = prefs.getInt("interval", 1);
 
-      sysConfig.score_threshold = prefs.getFloat("score_th", 0.65);
-      sysConfig.ratio_trigger = prefs.getFloat("ratio_tr", 1.5);
-      sysConfig.persist_required = prefs.getInt("persist", 3);
-      sysConfig.ema_alpha = prefs.getFloat("ema", 0.1);
+      // Model Estrus
+      sysConfig.record_interval_sec = prefs.getUShort("record", 30);
+      sysConfig.retention_days = prefs.getUChar("retain", 14);
+      sysConfig.partition_hours = prefs.getUChar("part", 3);
+      sysConfig.estrus_threshold_pct = prefs.getFloat("estrus", 6.0f);
+      sysConfig.stop_after_alarm = prefs.getBool("stop_alarm", true);
+      sysConfig.min_baseline_samples = prefs.getUChar("base_sample", 300);
+      sysConfig.dirty_timeout_samples = prefs.getUChar("dirty_sample", 240);
 
-      sysConfig.activity_min = prefs.getInt("act_min", 5);
-      sysConfig.balance_min = prefs.getFloat("bal_min", 0.3);
-
+      // Battery
       sysConfig.current_threshold = prefs.getFloat("curr_th", 150.0);
       sysConfig.power_threshold = prefs.getFloat("pow_th", 600.0);
       powerStats.energy_mWh = prefs.getFloat("energy", 0);
@@ -112,41 +164,48 @@ void loadConfig() {
   // 🔥 fallback default
   if (useDefault) {
 
+    // Device
     memset(&sysConfig, 0, sizeof(sysConfig));
     strncpy(sysConfig.node_id, "NODE-01", sizeof(sysConfig.node_id) - 1);  // ubah sesuai device id
-    
+    strncpy(sysConfig.animal_id, "COW-01", sizeof(sysConfig.animal_id) - 1);
     sysConfig.prox_active_low = true;  // true = LOW trigger | false = HIGH trigger
-    sysConfig.interval_hours = 1;      // interval dalam jam
-    sysConfig.buzzer_enabled = true;   // alarm aktif setelah interval
+    sysConfig.alarm_enabled = true;    // ingin alarm aktif/mati
+    // sysConfig.interval_hours = 1;      // interval dalam jam
 
-    sysConfig.score_threshold = 0.65;  // sensitivitas
-    sysConfig.ratio_trigger = 1.5;     // ratio trigger
-    sysConfig.persist_required = 3;    // noise filter
-    sysConfig.ema_alpha = 0.1;         // adaptasi
+    // Model Estrus
+    sysConfig.record_interval_sec = 30;     // 10 - 3600
+    sysConfig.retention_days = 14;          // 1 - 14
+    sysConfig.partition_hours = 3;          // must divide 24
+    sysConfig.estrus_threshold_pct = 6.0f;  // 0.1 - 100 %
+    sysConfig.stop_after_alarm = true;
+    sysConfig.min_baseline_samples = 300;   // 360 sample untuk interval = 30s & partition = 3h | untuk validasi baseline
+    sysConfig.dirty_timeout_samples = 240;  // sample untuk mengetahui sensor kotor atau tidak
 
-    sysConfig.activity_min = 5;
-    sysConfig.balance_min = 0.3;
-
-    sysConfig.current_threshold = 150.0;  // mA | alert batas maksimal arus batre
-    sysConfig.power_threshold = 600.0;   // mW | alert batas maksimal power batre
+    // Battery
+    sysConfig.current_threshold = 150.0;  // alert batas maksimal arus batre | 100 - 150 mA
+    sysConfig.power_threshold = 600.0;    // alert batas maksimal power batre | 400 - 600 mW
     powerStats.energy_mWh = 0;
 
+    // Debug
     Serial.println("⚙️ Default Config Loaded!");
-    
+
+    // Serial.println(sysConfig.interval_hours);
     Serial.println(sysConfig.node_id);
+    Serial.println(sysConfig.animal_id);
     Serial.println(sysConfig.prox_active_low);
-    Serial.println(sysConfig.interval_hours);
-    Serial.println(sysConfig.buzzer_enabled);
-    Serial.println(sysConfig.score_threshold);
-    Serial.println(sysConfig.ratio_trigger);
-    Serial.println(sysConfig.persist_required);
-    Serial.println(sysConfig.ema_alpha);
-    Serial.println(sysConfig.activity_min);
-    Serial.println(sysConfig.balance_min);
+    Serial.println(sysConfig.alarm_enabled);
+
+    Serial.println(sysConfig.record_interval_sec);
+    Serial.println(sysConfig.retention_days);
+    Serial.println(sysConfig.partition_hours);
+    Serial.println(sysConfig.estrus_threshold_pct);
+    Serial.println(sysConfig.stop_after_alarm);
+    Serial.println(sysConfig.min_baseline_samples);
+    Serial.println(sysConfig.dirty_timeout_samples);
+
     Serial.println(sysConfig.current_threshold);
     Serial.println(sysConfig.power_threshold);
     Serial.println(powerStats.energy_mWh);
-
   }
 }
 
@@ -159,19 +218,23 @@ void saveConfig() {
     return;
   }
 
+  // Device
+  // prefs.putInt("interval", sysConfig.interval_hours);
   prefs.putString("node_id", String(sysConfig.node_id));
+  prefs.putString("animal_id", String(sysConfig.animal_id));
   prefs.putBool("prox_low", sysConfig.prox_active_low);
-  prefs.putInt("interval", sysConfig.interval_hours);
-  prefs.putBool("buzzer", sysConfig.buzzer_enabled);
+  prefs.putBool("alarm", sysConfig.alarm_enabled);
 
-  prefs.putFloat("score_th", sysConfig.score_threshold);
-  prefs.putFloat("ratio_tr", sysConfig.ratio_trigger);
-  prefs.putInt("persist", sysConfig.persist_required);
-  prefs.putFloat("ema", sysConfig.ema_alpha);
+  // Model Estrus
+  prefs.putUShort("record", sysConfig.record_interval_sec);
+  prefs.putUChar("retain", sysConfig.retention_days);
+  prefs.putUChar("part", sysConfig.partition_hours);
+  prefs.putFloat("estrus", sysConfig.estrus_threshold_pct);
+  prefs.putBool("stop_alarm", sysConfig.stop_after_alarm);
+  prefs.putUChar("base_sample", sysConfig.min_baseline_samples);
+  prefs.putUChar("dirty_sample", sysConfig.dirty_timeout_samples);
 
-  prefs.putInt("act_min", sysConfig.activity_min);
-  prefs.putFloat("bal_min", sysConfig.balance_min);
-
+  // Battery
   prefs.putFloat("curr_th", sysConfig.current_threshold);
   prefs.putFloat("pow_th", sysConfig.power_threshold);
   prefs.putFloat("energy", powerStats.energy_mWh);

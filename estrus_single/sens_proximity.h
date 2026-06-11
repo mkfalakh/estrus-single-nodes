@@ -14,5 +14,12 @@ bool readProx1();
 bool readProx2();
 
 void initProximity();
-bool detectEstrusAdvanced(int a1, int a2, int hour);
-float getLastEstrusScore();
+
+bool isSensor1Dirty();
+bool isSensor2Dirty();
+
+void updateDirtyDetection(
+  bool s1,
+  bool s2);
+
+void resetDirtyDetection();

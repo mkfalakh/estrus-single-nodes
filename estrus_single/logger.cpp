@@ -18,8 +18,7 @@ bool initSDCard() {
     sysSetSD(false);
     return false;
   }
-
-  if (!SD.exists("/data")) SD.mkdir("/data");
+  
   if (!SD.exists("/log")) SD.mkdir("/log");
 
   Serial.println("✅ SDCard OK");

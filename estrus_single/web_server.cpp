@@ -10,6 +10,9 @@
 #include "system_state.h"
 #include "logger.h"
 #include "sens_proximity.h"
+#include "storage_stats.h"
+#include "wifi_manager.h"
+#include "csv_writer.h"
 #include <WebServer.h>
 #include <SD.h>
 #include <Arduino.h>
@@ -38,6 +41,45 @@ String getContentType(String filename) {
   // if (filename.endsWith(".png")) return "image/png";
   // if (filename.endsWith(".jpg")) return "image/jpeg";
   return "text/plain";
+}
+
+String escapeJson(const char* s) {
+
+  String out;
+
+  while (*s) {
+
+    switch (*s) {
+
+      case '\"':
+        out += "\\\"";
+        break;
+
+      case '\\':
+        out += "\\\\";
+        break;
+
+      case '\n':
+        out += "\\n";
+        break;
+
+      case '\r':
+        out += "\\r";
+        break;
+
+      case '\t':
+        out += "\\t";
+        break;
+
+      default:
+        out += *s;
+        break;
+    }
+
+    s++;
+  }
+
+  return out;
 }
 
 static String buildJSONRow(const String& line) {
@@ -90,11 +132,30 @@ bool isAuthenticated() {
 }
 
 void handleCheckAuth() {
-  if (isAuthenticated()) {
-    server.send(200, "application/json", "{\"auth\":true}");
-  } else {
-    server.send(401, "application/json", "{\"auth\":false}");
+
+  if (!isAuthenticated()) {
+
+    server.send(
+      401,
+      "application/json",
+      "{\"auth\":false}");
+
+    return;
   }
+
+  String json = "{";
+
+  json += "\"auth\":true,";
+  json += "\"node_id\":\"";
+  json += String(sysConfig.node_id);
+  json += "\"";
+
+  json += "}";
+
+  server.send(
+    200,
+    "application/json",
+    json);
 }
 
 void handleLogout() {
@@ -116,7 +177,7 @@ void handleLogin() {
   // ❌ user salah
   if (user != USER) {
     logToFile("❌ Login gagal (user salah): " + user);
-    delay(300);
+    // vTaskDelay(pdMS_TO_TICKS(300));
     server.send(200, "application/json", "{\"success\":false}");
     return;
   }
@@ -126,7 +187,7 @@ void handleLogin() {
   // ❌ password salah
   if (hashedInput != HASHED_PASS) {
     logToFile("❌ Login gagal (password salah)");
-    delay(300);
+    // vTaskDelay(pdMS_TO_TICKS(300));
     server.send(200, "application/json", "{\"success\":false}");
     return;
   }
@@ -154,9 +215,12 @@ void handleSystemStatus() {
 
   String json = "{";
 
-  json += "\"error\":" + String(sysIsError()) + ",";
-  json += "\"low_battery\":" + String(sysIsLowBattery()) + ",";
-  json += "\"alarm\":" + String(sysIsAlarm());
+  json += "\"error\":" + String(sysIsError() ? 1 : 0) + ",";
+  json += "\"sensor_dirty\":" + String(sysIsSensorDirty() ? 1 : 0) + ",";
+  json += "\"low_battery\":" + String(sysIsLowBattery() ? 1 : 0) + ",";
+  json += "\"alarm\":" + String(sysIsAlarm() ? 1 : 0) + ",";
+  json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
+  json += "\"sd_mutex\":" + String(sdMutex != NULL);
 
   json += "}";
 
@@ -171,36 +235,137 @@ void handleHistory() {
   }
 
   String date = server.arg("date");
-  String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
 
-  File file = SD.open(filename);
-  if (!file) {
-    server.send(200, "application/json", "{\"rows\":[],\"has_next\":false}");
+  if (date.length() != 10 || date[4] != '-' || date[7] != '-') {
+
+    server.send(
+      400,
+      "application/json",
+      "{\"error\":\"invalid date\"}");
+
     return;
   }
 
-  const int LIMIT = 6;
+  int page = 0;
+  int limit = 20;
 
-  char lines[LIMIT][128];
+  String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
 
-  // use psram
-  // char (*lines)[128] = (char (*)[128]) ps_malloc(LIMIT * 128);
+  if (!SD.exists(filename)) {
 
-  int count = readLastLines(file, lines, LIMIT);
+    server.send(
+      200,
+      "application/json",
+      "{\"rows\":[],\"has_next\":false}");
+
+    return;
+  }
+
+  File file = SD.open(filename);
+
+  if (!file) {
+
+    sysSetSD(false);
+
+    server.send(
+      500,
+      "application/json",
+      "{\"error\":\"sd\"}");
+
+    return;
+  }
+
+  sysSetSD(true);
+
+  // PAGE
+  if (server.hasArg("page")) {
+
+    page = (int)server.arg("page").toInt();
+
+    if (page < 0) {
+      page = 0;
+    }
+  }
+
+  // LIMIT
+  if (server.hasArg("limit")) {
+
+    long l = server.arg("limit").toInt();
+
+    l = constrain(l, 1L, 100L);
+
+    limit = (int)l;
+
+    // limit = constrain(
+    //   server.arg("limit").toInt(),
+    //   1,
+    //   100);
+  }
+
+  // char lines[LIMIT][128]; // alternatif jika PSRAM tidak bisa
+
+  // menggunakan PSRAM
+  char(*lines)[128] =
+    (char(*)[128])ps_malloc(
+      limit * sizeof(*lines));
+
+  if (!lines) {
+
+    server.send(
+      500,
+      "application/json",
+      "{\"error\":\"psram\"}");
+
+    file.close();
+
+    return;
+  }
+
+  // int count = readLastLines(file, lines, LIMIT);
+
+  bool hasNext = false;
+
+  int count =
+    readCsvPage(
+      file,
+      lines,
+      page,
+      limit,
+      hasNext);
 
   file.close();
 
-  String json = "{\"rows\":[";
+
+  String json = "{";
+
+  json += "\"page\":";
+  json += String(page);
+
+  json += ",\"limit\":";
+  json += String(limit);
+
+  json += ",\"count\":";
+  json += String(count);
+
+  json += ",\"rows\":[";
 
   for (int i = 0; i < count; i++) {
     json += "\"";
-    json += lines[i];
+    json += escapeJson(lines[i]);
     json += "\"";
 
     if (i < count - 1) json += ",";
   }
 
-  json += "],\"has_next\":false}";
+  json += "],";
+
+  json += "\"has_next\":";
+  json += String(
+    hasNext ? "true" : "false");
+
+  json += "}";
+
+  free(lines);
 
   server.send(200, "application/json", json);
 }
@@ -214,8 +379,12 @@ void handleStatusBuzzer() {
   }
 
   String json = "{";
-  json += "\"buzzer\":" + String(SYS.buzzer_active) + ",";
-  json += "\"interval\":" + String(sysConfig.interval_hours);
+
+  json += "\"buzzer_active\":" + String(SYS.buzzer_active ? "true" : "false") + ",";
+  json += "\"alarm_enabled\":" + String(sysConfig.alarm_enabled ? "true" : "false") + ",";
+  json += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? "true" : "false") + ",";
+  json += "\"alarm_ack\":" + String(isAlarmAcknowledged() ? "true" : "false");
+
   json += "}";
 
   server.send(200, "application/json", json);
@@ -228,13 +397,20 @@ void handleStopBuzzer() {
     return;
   }
 
-  if (sysIsAlarm()) {
-    logToFile("🛑 BUZZER STOPPED BY USER");
-  } else {
-    logToFile("⚠️ STOP requested but buzzer already OFF");
-  }
+  if (sysConfig.stop_after_alarm) {
 
-  sysStopAlarm();
+    acknowledgeAlarm();
+
+    logToFile(
+      "🔕 Alarm acknowledged");
+
+  } else {
+
+    sysStopAlarm();
+
+    logToFile(
+      "🔕 Alarm stopped");
+  }
 
   server.send(200, "application/json", "{\"success\":true}");
 }
@@ -257,12 +433,16 @@ void handleDownload() {
 
   File file = SD.open(filename);
   if (!file) {
+    sysSetSD(false);
+
     server.send(404, "text/plain", "File not found");
     return;
   }
 
+  sysSetSD(true);
+
   server.sendHeader("Content-Type", "text/csv");
-  server.sendHeader("Content-Disposition", "attachment; filename=" + date + ".csv");
+  server.sendHeader("Content-Disposition", "attachment; filename=" + String(sysConfig.node_id) + "-" + date + ".csv");
 
   server.streamFile(file, "text/csv");
   file.close();
@@ -278,47 +458,59 @@ void handleGetConfig() {
 
   String json = "{";
 
+  // DEVICE
   json += "\"node_id\":\"";
   json += String(sysConfig.node_id);
+  json += "\",";
+
+  json += "\"animal_id\":\"";
+  json += String(sysConfig.animal_id);
   json += "\",";
 
   json += "\"prox_low\":";
   json += String(sysConfig.prox_active_low ? 1 : 0);
   json += ",";
 
-  json += "\"interval\":";
-  json += String(sysConfig.interval_hours);
+  json += "\"alarm_enabled\":";
+  json += String(sysConfig.alarm_enabled ? 1 : 0);
   json += ",";
 
-  json += "\"buzzer_enabled\":";
-  json += String(sysConfig.buzzer_enabled ? 1 : 0);
+  // json += "\"interval\":";
+  // json += String(sysConfig.interval_hours);
+  // json += ",";
+
+  // MODEL ESTRUS
+  json += "\"record_interval_sec\":";
+  json += String(sysConfig.record_interval_sec);
   json += ",";
 
-  json += "\"score\":";
-  json += String(sysConfig.score_threshold, 2);
+  json += "\"retention_days\":";
+  json += String(sysConfig.retention_days);
   json += ",";
 
-  json += "\"ratio_trigger\":";
-  json += String(sysConfig.ratio_trigger, 2);
+  json += "\"partition_hours\":";
+  json += String(sysConfig.partition_hours);
   json += ",";
 
-  json += "\"persist\":";
-  json += String(sysConfig.persist_required);
+  json += "\"estrus_threshold_pct\":";
+  json += String(sysConfig.estrus_threshold_pct, 2);
   json += ",";
 
-  json += "\"ema\":";
-  json += String(sysConfig.ema_alpha, 2);
+  json += "\"stop_after_alarm\":";
+  json += String(sysConfig.stop_after_alarm ? 1 : 0);
   json += ",";
 
-  json += "\"activity_min\":";
-  json += String(sysConfig.activity_min);
+  json += "\"min_baseline_samples\":";
+  json += String(sysConfig.min_baseline_samples);
   json += ",";
 
-  json += "\"balance_min\":";
-  json += String(sysConfig.balance_min, 2);
+  json += "\"dirty_timeout_samples\":";
+  json += String(sysConfig.dirty_timeout_samples);
+  json += ",";
 
-  // json += "\"current\":" + String(sysConfig.current_threshold) + ",";
-  // json += "\"power\":" + String(sysConfig.power_threshold) + ",";
+  // BATTERY
+  json += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
+  json += "\"power_threshold\":" + String(sysConfig.power_threshold);
 
   json += "}";
 
@@ -357,7 +549,7 @@ void handleSetConfig() {
 
     id.trim();
 
-    // restart hanya jika berbeda
+    // restart hanya jika berbeda = true
     if (id != String(sysConfig.node_id)) {
 
       if (!isValidNodeId(id)) {
@@ -365,7 +557,7 @@ void handleSetConfig() {
         server.send(
           400,
           "application/json",
-          "{\"error\":\"invalid node_id\"}");
+          "{\"error\":\"invalid node_id cfg\"}");
 
         return;
       }
@@ -380,7 +572,7 @@ void handleSetConfig() {
         id.c_str(),
         sizeof(temp.node_id) - 1);
 
-      needRestart = true;
+      needRestart = true;  // perlu restart device
 
       logToFile(
         "🔧 Node ID changed: %s",
@@ -400,7 +592,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid prox_low\"}");
+        "{\"error\":\"invalid prox_low cfg\"}");
 
       return;
     }
@@ -409,175 +601,386 @@ void handleSetConfig() {
   }
 
   // ========================
-  // INTERVAL
+  // INTERVAL (tidak digunakan)
   // ========================
-  if (server.hasArg("interval")) {
+  // if (server.hasArg("interval")) {
 
-    int v = server.arg("interval").toInt();
+  //   int v = server.arg("interval").toInt();
 
-    if (v < 1 || v > 24) {
+  //   if (v < 1 || v > 24) {
 
-      server.send(
-        400,
-        "application/json",
-        "{\"error\":\"invalid interval\"}");
+  //     server.send(
+  //       400,
+  //       "application/json",
+  //       "{\"error\":\"invalid interval\"}");
 
-      return;
-    }
+  //     return;
+  //   }
 
-    temp.interval_hours = v;
-  }
+  //   temp.interval_hours = v;
+  // }
 
   // ========================
-  // BUZZER
+  // BUZZER/ALARM
   // ========================
-  if (server.hasArg("buzzer_enabled")) {
+  if (server.hasArg("alarm_enabled")) {
 
-    String v = server.arg("buzzer_enabled");
+    String v = server.arg("alarm_enabled");
 
     if (v != "0" && v != "1") {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid buzzer\"}");
+        "{\"error\":\"invalid alarm cfg\"}");
 
       return;
     }
 
-    temp.buzzer_enabled = (v == "1");
+    temp.alarm_enabled = (v == "1");
   }
 
   // ========================
-  // SCORE
+  // ANIMAL ID
   // ========================
-  if (server.hasArg("score")) {
+  if (server.hasArg("animal_id")) {
 
-    float v = server.arg("score").toFloat();
+    String id = server.arg("animal_id");
 
-    if (v < 0.1 || v > 5.0) {
+    id.trim();
+
+    // restart hanya jika berbeda = false
+    if (id != String(sysConfig.animal_id)) {
+
+      if (!isValidAnimalId(id)) {
+
+        server.send(
+          400,
+          "application/json",
+          "{\"error\":\"invalid animal_id cfg\"}");
+
+        return;
+      }
+
+      memset(
+        temp.animal_id,
+        0,
+        sizeof(temp.animal_id));
+
+      strncpy(
+        temp.animal_id,
+        id.c_str(),
+        sizeof(temp.animal_id) - 1);
+
+      // needRestart = false;  // tidak perlu restart device
+
+      logToFile(
+        "🐄 Animal ID changed: %s",
+        temp.animal_id);
+    }
+  }
+
+  // ========================
+  // RECORD INTERVAL SEC
+  // ========================
+  if (server.hasArg("record_interval_sec")) {
+
+    int v = server.arg("record_interval_sec").toInt();
+
+    if (v < 10 || v > 3600) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid score\"}");
+        "{\"error\":\"invalid record_interval_sec cfg\"}");
 
       return;
     }
 
-    temp.score_threshold = v;
+    temp.record_interval_sec = v;
   }
 
   // ========================
-  // RATIO
+  // RETENTION DAYS
   // ========================
-  if (server.hasArg("ratio_trigger")) {
+  if (server.hasArg("retention_days")) {
 
-    float v = server.arg("ratio_trigger").toFloat();
+    int v = server.arg("retention_days").toInt();
 
-    if (v < 0.1 || v > 10.0) {
+    if (v < 1 || v > 14) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid ratio_trigger\"}");
+        "{\"error\":\"invalid retention_days cfg\"}");
 
       return;
     }
 
-    temp.ratio_trigger = v;
+    temp.retention_days = v;
   }
 
   // ========================
-  // PERSIST
+  // PARTITION HOURS
   // ========================
-  if (server.hasArg("persist")) {
+  if (server.hasArg("partition_hours")) {
 
-    int v = server.arg("persist").toInt();
+    int v = server.arg("partition_hours").toInt();
 
-    if (v < 1 || v > 20) {
+    if (v < 1 || v > 24 || (24 % v) != 0) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid persist\"}");
+        "{\"error\":\"invalid partition_hours cfg\"}");
 
       return;
     }
 
-    temp.persist_required = v;
+    temp.partition_hours = v;
   }
 
   // ========================
-  // EMA
+  // ESTRUS THRESHOLD PCT
   // ========================
-  if (server.hasArg("ema")) {
+  if (server.hasArg("estrus_threshold_pct")) {
 
-    float v = server.arg("ema").toFloat();
+    float v = server.arg("estrus_threshold_pct").toFloat();
 
-    if (v <= 0.0 || v > 1.0) {
+    if (v < 0.0 || v > 100.0) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid ema\"}");
+        "{\"error\":\"invalid estrus_threshold_pct cfg\"}");
 
       return;
     }
 
-    temp.ema_alpha = v;
+    temp.estrus_threshold_pct = v;
   }
 
   // ========================
-  // ACTIVITY MIN
+  // STOP AFTER ALARM
   // ========================
-  if (server.hasArg("activity_min")) {
+  if (server.hasArg("stop_after_alarm")) {
 
-    int v = server.arg("activity_min").toInt();
+    String v = server.arg("stop_after_alarm");
 
-    if (v < 1 || v > 10000) {
+    if (v != "0" && v != "1") {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid activity_min\"}");
+        "{\"error\":\"invalid stop_after_alarm cfg\"}");
 
       return;
     }
 
-    temp.activity_min = v;
+    temp.stop_after_alarm = (v == "1");
   }
 
   // ========================
-  // BALANCE
+  // MIN BASELINE SAMPLES
   // ========================
-  if (server.hasArg("balance_min")) {
+  if (server.hasArg("min_baseline_samples")) {
 
-    float v = server.arg("balance_min").toFloat();
+    int v = server.arg("min_baseline_samples").toInt();
 
-    if (v < 0.01 || v > 1.0) {
+    if (v < 10 || v > 1000) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid balance_min\"}");
+        "{\"error\":\"invalid min_baseline_samples cfg\"}");
 
       return;
     }
 
-    temp.balance_min = v;
+    temp.min_baseline_samples = v;
+  }
+
+  // ========================
+  // DIRTY TIMEOUT SAMPLES
+  // ========================
+  if (server.hasArg("dirty_timeout_samples")) {
+
+    int v = server.arg("dirty_timeout_samples").toInt();
+
+    if (v < 10 || v > 1000) {
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid dirty_timeout_samples cfg\"}");
+
+      return;
+    }
+
+    temp.dirty_timeout_samples = v;
+  }
+
+  // ========================
+  // POWER & CURRENT BATTERY
+  // ========================
+  if (server.hasArg("current_threshold")) {
+
+    float v = server.arg("current_threshold").toFloat();
+
+    if (v < 100.0 || v > 150.0) {
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid current_threshold cfg\"}");
+
+      return;
+    }
+
+    temp.current_threshold = v;
+  }
+
+  // POWER
+  if (server.hasArg("power_threshold")) {
+
+    float v = server.arg("power_threshold").toFloat();
+
+    if (v < 400.0 || v > 600.0) {
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid power_threshold cfg\"}");
+
+      return;
+    }
+
+    temp.power_threshold = v;
   }
 
   // ========================
   // ALL VALID → APPLY
   // ========================
+
+  // simpan nilai lama sebelum overwrite
+  bool proxChanged = temp.prox_active_low != sysConfig.prox_active_low;
+  bool alarmChanged = temp.alarm_enabled != sysConfig.alarm_enabled;
+  bool intervalChanged = temp.record_interval_sec != sysConfig.record_interval_sec;
+  bool partitionChanged = temp.partition_hours != sysConfig.partition_hours;
+  bool estrusThresholdChanged = temp.estrus_threshold_pct != sysConfig.estrus_threshold_pct;
+  bool retentionChanged = temp.retention_days != sysConfig.retention_days;
+  bool stopAlarmChanged = temp.stop_after_alarm != sysConfig.stop_after_alarm;
+  bool baselineSampleChanged = temp.min_baseline_samples != sysConfig.min_baseline_samples;
+  bool dirtySampleChanged = temp.dirty_timeout_samples != sysConfig.dirty_timeout_samples;
+
+  bool currentChanged = temp.current_threshold != sysConfig.current_threshold;
+  bool powerChanged = temp.power_threshold != sysConfig.power_threshold;
+
   sysConfig = temp;
 
-  // runtime update
-  setProximityActiveLow(
-    sysConfig.prox_active_low);
+  // ==== RUNTIME APPLY UPDATE ====
 
-  // save prefs
+  // prox mode
+  if (proxChanged) {
+
+    setProximityActiveLow(sysConfig.prox_active_low);
+
+    logToFile(
+      "📡 Proximity mode: %s",
+      sysConfig.prox_active_low ? "LOW" : "HIGH");
+  }
+
+  // buzzer dimatikan
+  if (alarmChanged && !sysConfig.alarm_enabled) {
+
+    sysStopAlarm();
+
+    logToFile(
+      "🚨 Alarm device: %s",
+      sysConfig.alarm_enabled ? "LOW" : "HIGH");
+  }
+
+  // partition berubah
+  if (partitionChanged) {
+
+    resetTodayStats();
+    invalidateBaselineCache();
+
+    logToFile(
+      "📊 Partition stats reset");
+  }
+
+  // interval berubah
+  if (intervalChanged) {
+
+    logToFile(
+      "⏱ Record interval updated: %u sec",
+      sysConfig.record_interval_sec);
+  }
+
+  // estrus threshold berubah
+  if (estrusThresholdChanged) {
+
+    logToFile(
+      "📈 Estrus threshold updated: %.1f%%",
+      sysConfig.estrus_threshold_pct);
+  }
+
+  // retention berubah
+  if (retentionChanged) {
+
+    invalidateBaselineCache();
+
+    logToFile(
+      "🗂 Retention updated: %u days",
+      sysConfig.retention_days);
+  }
+
+  // alarm behavior berubah
+  if (stopAlarmChanged) {
+
+    logToFile(
+      "🔔 stop_after_alarm: %d",
+      sysConfig.stop_after_alarm);
+  }
+
+  // min baseline samples berubah
+  if (baselineSampleChanged) {
+
+    invalidateBaselineCache();
+
+    logToFile(
+      "🔁 min_baseline_samples: %d",
+      sysConfig.min_baseline_samples);
+  }
+
+  // dirty timeout samples berubah
+  if (dirtySampleChanged) {
+
+    resetDirtyDetection();
+
+    logToFile(
+      "🔁 dirty_timeout_samples: %d",
+      sysConfig.dirty_timeout_samples);
+  }
+
+  // current threshold berubah
+  if (currentChanged) {
+
+    logToFile(
+      "⚡ Current threshold updated: %.1f%%",
+      sysConfig.current_threshold);
+  }
+
+  // power threshold berubah
+  if (powerChanged) {
+
+    logToFile(
+      "⚡ Power threshold updated: %.1f%%",
+      sysConfig.power_threshold);
+  }
+
+  // ==== SAVE CONFIG ====
   saveConfig();
 
   logToFile(
@@ -590,7 +993,7 @@ void handleSetConfig() {
 
   json += "\"success\":true,";
   json += "\"restart\":";
-  json += String(needRestart ? 1 : 0);
+  json += needRestart ? "true" : "false";
 
   json += "}";
 
@@ -633,7 +1036,26 @@ void handleLatest() {
   String json = "{";
 
   json += "\"node_id\":\"" + String(sysConfig.node_id) + "\",";
-  json += "\"time\":\"" + nowStr() + "\",";
+  json += "\"animal_id\":\"" + String(sysConfig.animal_id) + "\",";
+
+  if (SYS.rtc_ok) {
+
+    json += "\"time\":\"";
+    json += nowStr();
+    json += "\",";
+
+  } else {
+
+    json += "\"time\":\"invalid\",";
+  }
+
+  // ========================
+  // ACTIVITY SENSOR
+  // ========================
+  json += "\"sensor1\":" + String(SYS.sensor1 ? 1 : 0) + ",";
+  json += "\"sensor2\":" + String(SYS.sensor2 ? 1 : 0) + ",";
+  json += "\"sensor1_dirty\":" + String(SYS.sensor1_dirty ? 1 : 0) + ",";
+  json += "\"sensor2_dirty\":" + String(SYS.sensor2_dirty ? 1 : 0) + ",";
 
   // ========================
   // POWER
@@ -641,19 +1063,6 @@ void handleLatest() {
   json += "\"voltage\":" + String(SYS.voltage) + ",";
   json += "\"current\":" + String(SYS.current) + ",";
   json += "\"power\":" + String(SYS.power) + ",";
-
-  // ========================
-  // ACTIVITY
-  // ========================
-  json += "\"a1\":" + String(SYS.a1) + ",";
-  json += "\"a2\":" + String(SYS.a2) + ",";
-  json += "\"total\":" + String(SYS.total) + ",";
-
-  // ========================
-  // MODEL
-  // ========================
-  json += "\"score\":" + String(SYS.score, 2) + ",";
-  json += "\"estrus\":" + String(SYS.estrus) + ",";
 
   // ========================
   // BATTERY
@@ -665,14 +1074,177 @@ void handleLatest() {
   // ========================
   // SYSTEM STATUS
   // ========================
-  json += "\"sd\":" + String(SYS.sd_ok) + ",";
-  json += "\"rtc\":" + String(SYS.rtc_ok) + ",";
-  json += "\"sensor\":" + String(SYS.sensor_ok) + ",";
-  json += "\"buzzer\":" + String(SYS.buzzer_active);
+  json += "\"sd\":" + String(SYS.sd_ok ? 1 : 0) + ",";
+  json += "\"rtc\":" + String(SYS.rtc_ok ? 1 : 0) + ",";
+  json += "\"sensor\":" + String(SYS.sensor_ok ? 1 : 0) + ",";
+  json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
+  json += "\"buzzer\":" + String(SYS.buzzer_active ? 1 : 0);
 
   json += "}";
 
   server.send(200, "application/json", json);
+}
+
+void handleEstrus() {
+
+  if (!isAuthenticated()) {
+    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+    return;
+  }
+
+  String json = "{";
+
+  json += "\"partition\":";
+  json += String(SYS.partition);
+  json += ",";
+
+  json += "\"current_rate\":";
+  json += String(SYS.current_rate * 100.0f, 1);
+  json += ",";
+
+  json += "\"baseline_rate\":";
+  json += String(SYS.baseline_rate * 100.0f, 1);
+  json += ",";
+
+  json += "\"deviation_pct\":";
+  json += String(SYS.deviation_pct, 1);
+  json += ",";
+
+  json += "\"threshold_pct\":";
+  json += String(sysConfig.estrus_threshold_pct, 1);
+  json += ",";
+
+  json += "\"baseline_samples\":";
+  json += String(SYS.baseline_samples);
+  json += ",";
+
+  json += "\"estrus\":";
+  json += String(SYS.estrus ? 1 : 0);
+  json += ",";
+
+  json += "\"valid\":";  // agar tahu baseline sudah cukup atau belum
+  json += String(SYS.baseline_samples >= sysConfig.min_baseline_samples);
+
+  json += "}";
+
+  server.send(
+    200,
+    "application/json",
+    json);
+}
+
+void handleStorage() {
+
+  if (!isAuthenticated()) {
+    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+    return;
+  }
+
+  if (!SYS.sd_ok) {
+
+    server.send(
+      200,
+      "application/json",
+      "{\"sd\":false}");
+
+    return;
+  }
+
+  uint64_t total =
+    SD.totalBytes();
+
+  uint64_t used =
+    SD.usedBytes();
+
+  String json = "{";
+
+  json += "\"retention_days\":";
+  json += String(
+    sysConfig.retention_days);
+  json += ",";
+
+  json += "\"csv_rows_today\":";
+  json += String(csvRowsWritten);
+  json += ",";
+
+  json += "\"free_sd_mb\":";
+  json += String(
+    (total - used) / 1024.0 / 1024.0,
+    1);
+  json += ",";
+
+  json += "\"used_sd_mb\":";
+  json += String(
+    used / 1024.0 / 1024.0,
+    1);
+  json += ",";
+
+  json += "\"log_queue\":";
+  json += String(
+    uxQueueMessagesWaiting(
+      logQueue));
+  json += ",";
+
+  json += "\"sensor_queue\":";
+  json += String(
+    uxQueueMessagesWaiting(
+      sensorQueue));
+
+  json += "}";
+
+  server.send(
+    200,
+    "application/json",
+    json);
+}
+
+void handleHealth() {
+
+  if (!isAuthenticated()) {
+
+    server.send(
+      401,
+      "application/json",
+      "{\"error\":\"unauthorized\"}");
+
+    return;
+  }
+
+  String json = "{";
+
+  json += "\"sd\":";
+  json += String(SYS.sd_ok ? "true" : "false");
+  json += ",";
+
+  json += "\"rtc\":";
+  json += String(SYS.rtc_ok ? "true" : "false");
+  json += ",";
+
+  json += "\"sensor\":";
+  json += String(SYS.sensor_ok ? "true" : "false");
+  json += ",";
+
+  json += "\"sensor_dirty\":";
+  json += String(sysIsSensorDirty() ? "true" : "false");
+  json += ",";
+
+  json += "\"wifi\":";
+  json += String(wifiEnabled ? "true" : "false");
+  json += ",";
+
+  json += "\"alarm\":";
+  json += String(sysIsAlarm() ? "true" : "false");
+  json += ",";
+
+  json += "\"low_battery\":";
+  json += String(sysIsLowBattery() ? "true" : "false");
+
+  json += "}";
+
+  server.send(
+    200,
+    "application/json",
+    json);
 }
 
 // ===== INIT WEBSERVER =====
@@ -687,20 +1259,30 @@ void initWebServer() {
     handleFileRead("/index.html");
   });
 
+  // AUTH
   server.on("/api/check", HTTP_GET, handleCheckAuth);
   server.on("/api/login", HTTP_GET, handleLogin);
   server.on("/api/logout", HTTP_GET, handleLogout);
 
-  server.on("/api/node/latest", HTTP_GET, handleLatest);
-  server.on("/api/node/history", HTTP_GET, handleHistory);
-  server.on("/api/download", HTTP_GET, handleDownload);
+  // DEVICE NODE
+  server.on("/api/node/latest", HTTP_GET, handleLatest);    // snapshot hardware & health
+  server.on("/api/node/estrus", HTTP_GET, handleEstrus);    // informasi model estrus
+  server.on("/api/node/history", HTTP_GET, handleHistory);  // untuk melihat data csv
+  server.on("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
+  server.on("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
 
-  server.on("/api/config/get", HTTP_GET, handleGetConfig);
-  server.on("/api/config/set", HTTP_GET, handleSetConfig);
-  server.on("/api/config/reset", HTTP_GET, handleResetConfig);
-  server.on("/api/status/buzzer", HTTP_GET, handleStatusBuzzer);
-  server.on("/api/buzzer/stop", HTTP_GET, handleStopBuzzer);
-  server.on("/api/system", HTTP_GET, handleSystemStatus);
+  // CONFIG
+  server.on("/api/config/get", HTTP_GET, handleGetConfig);      // untuk load config dari esp
+  server.on("/api/config/set", HTTP_GET, handleSetConfig);      // untuk ubah config
+  server.on("/api/config/reset", HTTP_GET, handleResetConfig);  // untuk reset config (belum dipakai)
+
+  // CONTROL
+  server.on("/api/status/buzzer", HTTP_GET, handleStatusBuzzer);  // untuk cek status alarm
+  server.on("/api/buzzer/stop", HTTP_GET, handleStopBuzzer);      // untuk tombol stop alarm
+
+  // SYSTEM
+  server.on("/api/system", HTTP_GET, handleSystemStatus);  // untuk cek kondisi device
+  server.on("/api/storage", HTTP_GET, handleStorage);      // untuk cek kondisi SDCard
 
   server.on("/ping", HTTP_GET, []() {
     server.send(200, "text/plain", "OK");
