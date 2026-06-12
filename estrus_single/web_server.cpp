@@ -671,7 +671,7 @@ void handleSetConfig() {
     pass.trim();
 
     if (
-      pass.length() < 8 || pass.length() > 31) {
+      pass.length() < 8 || pass.length() > 20) {
 
       server.send(
         400,
