@@ -49,22 +49,6 @@ void buzzerPlay(BuzzerPattern pattern) {
 }
 
 
-// ALARM BUNYI KETIKA MENCAPAI INTERVAL [sistem lama]
-// void checkIntervalTrigger() {
-//   unsigned long now = millis();
-
-//   unsigned long intervalMs = sysConfig.interval_hours * 3600000UL;
-
-//   if (now - lastTrigger >= intervalMs) {
-//     lastTrigger = now;
-
-//     if (sysConfig.alarm_enabled) {
-//       sysTriggerAlarm();
-//       logToFile("🔔 Interval trigger alarm");
-//     }
-//   }
-// }
-
 // BUZZER TASK
 void buzzerTask(void *pv) {
 

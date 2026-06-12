@@ -7,9 +7,8 @@ WIFI AP Creds: ESTRUS-NODE-00 | estrus2026
 Dashboard Login: admin | estrus2026
 */
 
-// Config Sensor Task
-#define SAMPLE_MS 100 // sampling 100ms
-#define WINDOW_MS 5000 // window 5 detik
+// Firmware Version
+#define FIRMWARE_VERSION "2.0.0"
 
 // Pin Proximity
 #define PROXI_MODE PROX_ACTIVE_LOW // atau PROX_ACTIVE_HIGH
@@ -23,7 +22,7 @@ Dashboard Login: admin | estrus2026
 #define BUZ_RES 8 // untuk buzzer passive
 
 // Pin Button Alarm
-#define BUZZER_BUTTON_PIN 2 // atau pin 2 / 6
+#define BUZZER_BUTTON_PIN 2 // JANGAN DIUBAH
 
 // I2C
 #define I2C_SDA 8 // JANGAN DIUBAH

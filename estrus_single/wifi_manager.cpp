@@ -10,18 +10,20 @@
 bool wifiEnabled = true;
 unsigned long lastClientTime = 0;
 
-const char* WIFI_PASSWORD = "estrus2026";
+String getAPSSID() {
+
+  return "ESTRUS-" + String(sysConfig.node_id);  // SSID: ESTRUS-NODE-xx
+}
 
 void initWiFi() {
 
   WiFi.mode(WIFI_AP);
 
-  String ssid = "ESTRUS-";  // cth: ESTRUS-NODE-01 | SSID
-  ssid += sysConfig.node_id;
+  String ssid = getAPSSID();
 
   bool result = WiFi.softAP(
     ssid.c_str(),
-    WIFI_PASSWORD);
+    sysConfig.ap_password);
 
   if (!result) {
     logToFile("❌ WiFi AP gagal init");
@@ -47,14 +49,13 @@ void enableWiFiAP() {
 
   delay(100);
 
-  String ssid = "ESTRUS-";  // cth: ESTRUS-NODE-01 | SSID
-  ssid += sysConfig.node_id;
+  String ssid = getAPSSID();
 
-  bool ok = WiFi.softAP(
+  bool result = WiFi.softAP(
     ssid.c_str(),
-    WIFI_PASSWORD);
+    sysConfig.ap_password);
 
-  if (!ok) {
+  if (!result) {
 
     logToFile(
       "❌ WiFi AP gagal diaktifkan");

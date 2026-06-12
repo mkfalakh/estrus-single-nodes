@@ -73,12 +73,12 @@ static String safeNowStr() {
 
 static String getLogPath() {
 
-  String path = "/log/";
+  String path = "/logs/";
 
   path += sysConfig.node_id;
   path += "-";
   path += todayDateStr();
-  path += ".txt";
+  path += ".log";
 
   return path;
 }
@@ -113,18 +113,6 @@ void initLogger() {
 
     return;
   }
-
-  // ========================
-  // START TASK (pindah di task_manager.h)
-  // ========================
-  // xTaskCreatePinnedToCore(
-  //   loggerTask,
-  //   "Logger",
-  //   8192, // safe: 12288
-  //   NULL,
-  //   1,
-  //   NULL,
-  //   1);
 
   Serial.println("✅ Logger Ready");
 }

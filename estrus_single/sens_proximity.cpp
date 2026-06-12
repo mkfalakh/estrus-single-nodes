@@ -102,6 +102,12 @@ void sensorTask(void *pv) {
   unsigned long lastPowerTs = millis();
   static bool lastEstrus = false;
 
+  // cek sensor kotor
+  static bool lastD1 = false;
+  static bool lastD2 = false;
+  static DateTime dirty1Since;
+  static DateTime dirty2Since;
+
   while (true) {
 
     unsigned long now = millis();
@@ -121,6 +127,65 @@ void sensorTask(void *pv) {
       bool d1 = isSensor1Dirty();
       bool d2 = isSensor2Dirty();
 
+      // ==========================
+      // SENSOR 1 DIRTY EVENT
+      // ==========================
+      if (d1 != lastD1) {
+
+        if (d1) {
+
+          dirty1Since = getNow();
+
+          logToFile(
+            "🟠 Sensor 1 dirty detected");
+
+        } else {
+
+          TimeSpan span =
+            getNow() - dirty1Since;
+
+          logToFile(
+            "🟢 Sensor 1 dirty cleared "
+            "(%ld d %ld h %ld m)",
+
+            span.days(),
+            span.hours(),
+            span.minutes());
+        }
+
+        lastD1 = d1;
+      }
+
+      // ==========================
+      // SENSOR 2 DIRTY EVENT
+      // ==========================
+      if (d2 != lastD2) {
+
+        if (d2) {
+
+          dirty2Since = getNow();
+
+          logToFile(
+            "🟠 Sensor 2 dirty detected");
+
+        } else {
+
+          TimeSpan span =
+            getNow() - dirty2Since;
+
+          logToFile(
+            "🟢 Sensor 2 dirty cleared "
+            "(%ld d %ld h %ld m)",
+
+            span.days(),
+            span.hours(),
+            span.minutes());
+        }
+
+        lastD2 = d2;
+      }
+
+      // set sensor dirty
       sysSetSensorDirty(d1 || d2);
 
       // standing definition
