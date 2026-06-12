@@ -467,6 +467,10 @@ void handleGetConfig() {
   json += String(sysConfig.animal_id);
   json += "\",";
 
+  json += "\"ap_password\":\"";
+  json += String(sysConfig.ap_password);
+  json += "\",";
+
   json += "\"prox_low\":";
   json += String(sysConfig.prox_active_low ? 1 : 0);
   json += ",";
@@ -474,10 +478,6 @@ void handleGetConfig() {
   json += "\"alarm_enabled\":";
   json += String(sysConfig.alarm_enabled ? 1 : 0);
   json += ",";
-
-  // json += "\"interval\":";
-  // json += String(sysConfig.interval_hours);
-  // json += ",";
 
   // MODEL ESTRUS
   json += "\"record_interval_sec\":";
@@ -601,26 +601,6 @@ void handleSetConfig() {
   }
 
   // ========================
-  // INTERVAL (tidak digunakan)
-  // ========================
-  // if (server.hasArg("interval")) {
-
-  //   int v = server.arg("interval").toInt();
-
-  //   if (v < 1 || v > 24) {
-
-  //     server.send(
-  //       400,
-  //       "application/json",
-  //       "{\"error\":\"invalid interval\"}");
-
-  //     return;
-  //   }
-
-  //   temp.interval_hours = v;
-  // }
-
-  // ========================
   // BUZZER/ALARM
   // ========================
   if (server.hasArg("alarm_enabled")) {
@@ -677,6 +657,46 @@ void handleSetConfig() {
       logToFile(
         "🐄 Animal ID changed: %s",
         temp.animal_id);
+    }
+  }
+
+  // ========================
+  // WIFI AP PASSWORD
+  // ========================
+  if (server.hasArg("ap_password")) {
+
+    String pass =
+      server.arg("ap_password");
+
+    pass.trim();
+
+    if (
+      pass.length() < 8 || pass.length() > 31) {
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid ap_password\"}");
+
+      return;
+    }
+
+    if (pass != String(sysConfig.ap_password)) {
+
+      memset(
+        temp.ap_password,
+        0,
+        sizeof(temp.ap_password));
+
+      strncpy(
+        temp.ap_password,
+        pass.c_str(),
+        sizeof(temp.ap_password) - 1);
+
+      needRestart = true;
+
+      logToFile(
+        "🔑 AP password changed");
     }
   }
 
@@ -1033,7 +1053,7 @@ void handleResetConfig() {
   server.send(200, "application/json", "{\"reset\":true}");
 }
 
-// ===== HANDLE LATEST SYSTEM =====
+// ===== HANDLE DEVICE NODE =====
 void handleLatest() {
 
   // if (!isAuthenticated()) {
@@ -1255,6 +1275,66 @@ void handleHealth() {
     json);
 }
 
+void handleDevice() {
+
+  // if (!isAuthenticated()) {
+
+  //   server.send(
+  //     401,
+  //     "application/json",
+  //     "{\"error\":\"unauthorized\"}");
+
+  //   return;
+  // }
+
+  uint64_t mac =
+    ESP.getEfuseMac();
+
+  char macStr[18];
+
+  snprintf(
+    macStr,
+    sizeof(macStr),
+    "%02X:%02X:%02X:%02X:%02X:%02X",
+
+    (uint8_t)(mac >> 40),
+    (uint8_t)(mac >> 32),
+    (uint8_t)(mac >> 24),
+    (uint8_t)(mac >> 16),
+    (uint8_t)(mac >> 8),
+    (uint8_t)(mac));
+
+  String json = "{";
+
+  json += "\"node_id\":\"";
+  json += String(sysConfig.node_id);
+  json += "\",";
+
+  json += "\"animal_id\":\"";
+  json += String(sysConfig.animal_id);
+  json += "\",";
+
+  json += "\"ap_ssid\":\"";
+  json += getAPSSID();
+  json += "\",";
+
+  json += "\"mac\":\"";
+  json += macStr;
+  json += "\",";
+
+  json += "\"firmware\":\"";
+  json += FIRMWARE_VERSION;
+  json += "\"";
+
+  json += "}";
+
+  server.send(
+    200,
+    "application/json",
+    json);
+}
+
+
 // ===== INIT WEBSERVER =====
 void initWebServer() {
   // Collect header cookie
@@ -1280,13 +1360,13 @@ void initWebServer() {
   server.on("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
 
   // CONFIG
-  server.on("/api/config", HTTP_GET, handleGetConfig);      // untuk load config dari esp
-  server.on("/api/config", HTTP_POST, handleSetConfig);      // untuk ubah config
+  server.on("/api/config", HTTP_GET, handleGetConfig);          // untuk load config dari esp
+  server.on("/api/config", HTTP_POST, handleSetConfig);         // untuk ubah config
   server.on("/api/config/reset", HTTP_GET, handleResetConfig);  // untuk reset config (belum dipakai)
 
   // CONTROL
   server.on("/api/status/buzzer", HTTP_GET, handleStatusBuzzer);  // untuk cek status alarm
-  server.on("/api/buzzer/stop", HTTP_POST, handleStopBuzzer);      // untuk tombol stop alarm
+  server.on("/api/buzzer/stop", HTTP_POST, handleStopBuzzer);     // untuk tombol stop alarm
 
   // SYSTEM
   server.on("/api/system", HTTP_GET, handleSystemStatus);  // untuk cek kondisi device
