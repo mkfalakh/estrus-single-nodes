@@ -69,7 +69,8 @@ void setup() {
   // =========================
   logToFile("🚀 System Ready");
   logToFile(
-    "Node:%s Animal:%s",
+    "Ver:%s | Node:%s | Animal:%s",
+    FIRMWARE_VERSION,
     sysConfig.node_id,
     sysConfig.animal_id);
 }
