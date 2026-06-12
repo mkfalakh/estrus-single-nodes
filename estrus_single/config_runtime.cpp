@@ -224,15 +224,15 @@ void loadConfig() {
     // Model Estrus
     sysConfig.record_interval_sec = 30;     // 10 - 3600
     sysConfig.retention_days = 3;           // 1 - 14
-    sysConfig.partition_hours = 3;          // must divide 24
+    sysConfig.partition_hours = 3;          // 1 - 24
     sysConfig.estrus_threshold_pct = 6.0f;  // 0.1 - 100 %
     sysConfig.stop_after_alarm = true;
-    sysConfig.min_baseline_samples = 300;   // 360 sample untuk interval = 30s & partition = 3h | untuk validasi baseline
-    sysConfig.dirty_timeout_samples = 240;  // sample untuk mengetahui sensor kotor atau tidak
+    sysConfig.min_baseline_samples = 300;   // 10 - 1000 | untuk validasi baseline
+    sysConfig.dirty_timeout_samples = 240;  // 10 - 1000 | sample untuk mengetahui sensor kotor atau tidak
 
     // Battery
-    sysConfig.current_threshold = 150.0;  // alert batas maksimal arus batre | 100 - 150 mA
-    sysConfig.power_threshold = 600.0;    // alert batas maksimal power batre | 400 - 600 mW
+    sysConfig.current_threshold = 150.0;  // 100 - 150 mA | alert batas maksimal arus batre
+    sysConfig.power_threshold = 600.0;    // 400 - 600 mW | alert batas maksimal power batre
     powerStats.energy_mWh = 0;
 
     saveConfig();
