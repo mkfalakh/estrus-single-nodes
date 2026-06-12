@@ -64,7 +64,7 @@ void watchdogTask(void* pv) {
     printTask(
       "Button",
       buttonTaskHandle);
-    
+
     printTask(
       "wifiTask",
       wifiTaskHandle);
@@ -81,7 +81,6 @@ void watchdogTask(void* pv) {
     Serial.println(
       "========================\n");
 
-    vTaskDelay(
-      10000 / portTICK_PERIOD_MS);
+    vTaskDelay(10000 / portTICK_PERIOD_MS);
   }
 }

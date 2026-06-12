@@ -100,6 +100,7 @@ void sensorTask(void *pv) {
   static unsigned long lastRtcLog = 0;
   unsigned long lastSample = 0;
   unsigned long lastPowerTs = millis();
+  static bool lastEstrus = false;
 
   while (true) {
 
@@ -183,7 +184,7 @@ void sensorTask(void *pv) {
       if (rtcValid) {
 
         // Partition Event
-        checkPartitionTransition();
+        checkTimeTransitions();
 
         // Standing Stats
         updatePartitionStats(standing);
@@ -214,8 +215,16 @@ void sensorTask(void *pv) {
         sysSetEstrusResult(result);
       }
 
-      // ALARM HANDLING
-      if (rtcValid && result.estrus && sysConfig.alarm_enabled && !sysIsAlarm() && !(sysConfig.stop_after_alarm && isAlarmAcknowledged())) {
+      // ALARM HANDLING JIKA MENCAPAI ESTRUS
+
+      // validasi estrus jika sesuai baseline samples
+      bool currentEstrus = result.valid && result.estrus;
+
+      bool estrusRising = (!lastEstrus && currentEstrus);
+
+      lastEstrus = currentEstrus;
+
+      if (rtcValid && estrusRising && sysConfig.alarm_enabled && !sysIsAlarm() && !(sysConfig.stop_after_alarm && isAlarmAcknowledged())) {
 
         sysStartAlarm();
       }

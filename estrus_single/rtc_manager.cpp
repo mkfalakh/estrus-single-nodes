@@ -6,16 +6,6 @@
 #define TZ_OFFSET 7 * 3600
 RTC_DS3231 rtc;
 
-uint8_t getPartitionIndex() {
-
-  DateTime t = getNow();
-
-  return (
-    t.hour() /
-    sysConfig.partition_hours
-  );
-}
-
 DateTime getNow() {
   // return rtc.now();
 

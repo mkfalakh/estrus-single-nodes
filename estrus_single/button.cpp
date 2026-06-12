@@ -9,7 +9,7 @@
 #include "logger.h"
 #include <Arduino.h>
 
-#define BUTTON_DEBOUNCE_MS 50
+#define BUTTON_DEBOUNCE_MS 100
 
 void initButton() {
   pinMode(BUZZER_BUTTON_PIN, INPUT_PULLUP);
@@ -97,32 +97,55 @@ static void handleButtonEvent(ButtonEvent event) {
 
 ButtonEvent getButtonEvent() {
 
-  static bool lastButton = HIGH;
+  static bool lastReading = HIGH;
+  static bool stableState = HIGH;
+  static bool lastStable = HIGH;
+
+  static unsigned long debounceTs = 0;
 
   static unsigned long pressStart = 0;
-
   static unsigned long clickStart = 0;
 
   static uint8_t clickCount = 0;
 
   static bool longHandled = false;
 
+  const unsigned long DEBOUNCE_MS = 50;
   const unsigned long DOUBLE_MS = 700;
-
   const unsigned long LONG_MS = 5000;
 
-  bool current =
+  unsigned long now = millis();
+
+  // =========================
+  // DEBOUNCE
+  // =========================
+
+  bool reading =
     digitalRead(BUZZER_BUTTON_PIN);
 
-  unsigned long now =
-    millis();
+  if (reading != lastReading) {
+
+    debounceTs = now;
+
+    lastReading = reading;
+  }
+
+  if (now - debounceTs >= DEBOUNCE_MS) {
+
+    stableState = reading;
+  }
+
+  bool current = stableState;
 
   // =========================
   // FALLING EDGE
   // =========================
-  if (lastButton == HIGH && current == LOW) {
+
+  if (lastStable == HIGH && current == LOW) {
 
     pressStart = now;
+
+    longHandled = false;
 
     if (clickCount == 0) {
 
@@ -139,13 +162,14 @@ ButtonEvent getButtonEvent() {
   // =========================
   // LONG PRESS
   // =========================
-  if (current == LOW && !longHandled && now - pressStart >= LONG_MS) {
+
+  if (current == LOW && pressStart != 0 && !longHandled && now - pressStart >= LONG_MS) {
 
     longHandled = true;
 
     clickCount = 0;
 
-    lastButton = current;
+    lastStable = current;
 
     return BTN_LONG_PRESS;
   }
@@ -153,7 +177,10 @@ ButtonEvent getButtonEvent() {
   // =========================
   // RELEASE
   // =========================
-  if (lastButton == LOW && current == HIGH) {
+
+  if (lastStable == LOW && current == HIGH) {
+
+    pressStart = 0;
 
     longHandled = false;
   }
@@ -161,31 +188,34 @@ ButtonEvent getButtonEvent() {
   // =========================
   // DOUBLE CLICK
   // =========================
+
   if (clickCount == 2) {
 
     clickCount = 0;
 
-    lastButton = current;
+    lastStable = current;
 
     return BTN_DOUBLE_CLICK;
   }
 
   // =========================
-  // SINGLE CLICK TIMEOUT
+  // SINGLE CLICK
   // =========================
+
   if (clickCount == 1 && now - clickStart > DOUBLE_MS) {
 
     clickCount = 0;
 
-    lastButton = current;
+    lastStable = current;
 
     return BTN_SINGLE_CLICK;
   }
 
-  lastButton = current;
+  lastStable = current;
 
   return BTN_NONE;
 }
+
 
 // BUTTON TASK
 void buttonTask(void *pv) {

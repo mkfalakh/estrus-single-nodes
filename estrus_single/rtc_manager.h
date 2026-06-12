@@ -7,5 +7,3 @@ bool initRTC();
 DateTime getNow();
 String todayDateStr(); // "YYYY-MM-DD"
 String nowStr(); // "YYYY-MM-DD HH:MM:SS"
-
-uint8_t getPartitionIndex();
