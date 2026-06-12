@@ -1,4 +1,5 @@
 #pragma once
+#include <Arduino.h>
 
 void initWiFi();
 void enableWiFiAP();
@@ -7,3 +8,4 @@ bool isWiFiEnabled();
 
 extern bool wifiEnabled;
 extern unsigned long lastClientTime;
+String getAPSSID();
