@@ -23,7 +23,7 @@ Dashboard Login: admin | estrus2026
 #define BUZ_RES 8 // untuk buzzer passive
 
 // Pin Button Alarm
-#define BUZZER_BUTTON_PIN 6 // atau pin 2 / 6
+#define BUZZER_BUTTON_PIN 2 // atau pin 2 / 6
 
 // I2C
 #define I2C_SDA 8 // JANGAN DIUBAH

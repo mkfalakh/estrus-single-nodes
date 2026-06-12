@@ -5,6 +5,8 @@ enum BuzzerPattern {
 
   BUZZER_NONE,
 
+  BUZZER_LOW_BATTERY,
+
   BUZZER_ESTRUS,
 
   BUZZER_DOUBLE_CLICK,

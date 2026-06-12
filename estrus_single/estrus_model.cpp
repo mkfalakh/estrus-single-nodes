@@ -6,25 +6,36 @@
 #include "logger.h"
 
 #define MAX_PARTITIONS 24
-#define MIN_BASELINE_SAMPLES 100
 
-static PartitionStats todayStats[MAX_PARTITIONS];
-static uint32_t todayStanding = 0;
-static uint32_t todayTotal = 0;
+static PartitionStats partitionStats[MAX_PARTITIONS];
 static uint8_t lastPartition = 255;
+static uint8_t lastDay = 255;
+
+static uint8_t getPartitionIndex() {
+
+  DateTime now = getNow();
+
+  return now.hour() / sysConfig.partition_hours;
+}
 
 // ======================================
 // RESET STANDING
 // ======================================
 
-void resetTodayStats() {
+void resetRuntimePartitionStats(uint8_t partition) {
 
-  todayStanding = 0;
+  // uint8_t partition = getPartitionIndex();
 
-  todayTotal = 0;
+  if (partition >= MAX_PARTITIONS) {
+    return;
+  }
+
+  partitionStats[partition].standing = 0;
+  partitionStats[partition].total = 0;
 
   logToFile(
-    "📊 Today stats reset");
+    "📊 Partition %u runtime stats reset",
+    partition);
 }
 
 
@@ -32,9 +43,9 @@ void resetTodayStats() {
 // ACCESSOR
 // ======================================
 
-PartitionStats *getTodayStats() {
+PartitionStats *getRuntimePartitionStats() {
 
-  return todayStats;
+  return partitionStats;
 }
 
 
@@ -43,75 +54,79 @@ PartitionStats *getTodayStats() {
 // ======================================
 
 // MENGELOLA PERGANTIAN PARTITION
-void checkPartitionTransition() {
+void checkTimeTransitions() {
 
   if (!SYS.rtc_ok) {
+    logToFile("RTC unknown! gagal cek partition!");
     return;
   }
 
   if (sysConfig.partition_hours == 0) {
+    logToFile("Partition tidak boleh 0! gagal cek partition!");
     return;
   }
 
   DateTime now = getNow();
 
-  uint8_t currentPartition =
+  uint8_t newDay = now.day();
+
+  uint8_t newPartition =
     now.hour() / sysConfig.partition_hours;
 
   // pertama kali boot
   if (lastPartition == 255) {
 
-    lastPartition = currentPartition;
+    lastPartition = newPartition;
+    lastDay = newDay;
 
     return;
   }
 
-  // partition berubah
-  if (currentPartition != lastPartition) {
-
-    resetAlarmAcknowledgement();
+  // ======================
+  // DAY TRANSITION
+  // ======================
+  if (lastDay != 255 && newDay != lastDay) {
 
     invalidateBaselineCache();
 
-    logToFile(
-      "🔔 Partition changed: %u -> %u",
-      lastPartition,
-      currentPartition);
+    resetAlarmAcknowledgement();
 
-    lastPartition = currentPartition;
+    logToFile(
+      "📅 New day → baseline cache reset");
   }
+
+  // ======================
+  // PARTITION TRANSITION
+  // ======================
+  if (lastPartition != 255 && newPartition != lastPartition) {
+
+    resetRuntimePartitionStats(newPartition);
+
+    logToFile(
+      "🕒 Partition %u → %u",
+      lastPartition,
+      newPartition);
+  }
+
+  lastDay = newDay;
+  lastPartition = newPartition;
 }
 
 
 // MENGHITUNG STANDING STATS
 void updatePartitionStats(bool standing) {
 
-  if (standing) {
+  uint8_t p = getPartitionIndex();
 
-    todayStanding++;
+  if (p >= MAX_PARTITIONS) {
+    return;
   }
 
-  todayTotal++;
-}
+  if (standing) {
+    partitionStats[p].standing++;
+  }
 
-
-// ======================================
-// PLACEHOLDER BASELINE
-// nanti dipindah ke storage_stats.cpp
-// ======================================
-
-static bool loadBaseline(
-
-  uint8_t partition,
-
-  float &baselineRate,
-  uint32_t &baselineSamples) {
-
-  baselineRate = 0.50f;
-
-  baselineSamples = 500;
-
-  return true;
+  partitionStats[p].total++;
 }
 
 
@@ -137,7 +152,7 @@ EstrusResult evaluateEstrus() {
     return r;
 
   PartitionStats &s =
-    todayStats[p];
+    partitionStats[p];
 
   if (s.total == 0)
     return r;
@@ -157,11 +172,10 @@ EstrusResult evaluateEstrus() {
 
   uint32_t baselineSamples;
 
-  if (
-    !loadBaseline(
-      p,
-      baselineRate,
-      baselineSamples)) {
+  if (!loadPartitionBaseline(
+        p,
+        baselineRate,
+        baselineSamples)) {
 
     return r;
   }
@@ -177,7 +191,7 @@ EstrusResult evaluateEstrus() {
   // -----------------------------
 
   if (
-    baselineSamples < MIN_BASELINE_SAMPLES) {
+    baselineSamples < sysConfig.min_baseline_samples) {
 
     r.valid = false;
 
@@ -210,7 +224,7 @@ EstrusResult evaluateEstrus() {
   // -----------------------------
 
   r.estrus =
-    (r.deviation_pct > sysConfig.estrus_threshold_pct);
+    (r.deviation_pct >= sysConfig.estrus_threshold_pct);
 
   r.valid = true;
 

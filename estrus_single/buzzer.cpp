@@ -16,6 +16,7 @@ static int step = 0;
 unsigned long lastTrigger = 0;
 
 static volatile BuzzerPattern buzzerPattern = BUZZER_NONE;
+#define LOW_BATTERY_INTERVAL_MS (30UL * 60UL * 1000UL)
 
 void buzzerOn() {
 #if BUZZER_PASSIVE
@@ -70,6 +71,7 @@ void buzzerTask(void *pv) {
   while (true) {
 
     unsigned long now = millis();
+    static unsigned long lastLowBatteryBeep = 0;
 
     // ERROR MODE (PRIORITY)
     if (sysIsError()) {
@@ -87,7 +89,35 @@ void buzzerTask(void *pv) {
       continue;
     }
 
+    // LOW BATTERY MODE
+    if (sysIsLowBattery() && !sysIsAlarm() && sysConfig.alarm_enabled) {
+
+      if (millis() - lastLowBatteryBeep >= LOW_BATTERY_INTERVAL_MS) {
+
+        buzzerPattern = BUZZER_LOW_BATTERY;
+
+        lastLowBatteryBeep = millis();
+      }
+    }
+
     switch (buzzerPattern) {
+
+      case BUZZER_LOW_BATTERY:
+
+        buzzerOn();
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        buzzerOff();
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        buzzerOn();
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        buzzerOff();
+
+        buzzerPattern = BUZZER_NONE;
+
+        continue;
 
       case BUZZER_DOUBLE_CLICK:
 

@@ -133,15 +133,15 @@ bool isAuthenticated() {
 
 void handleCheckAuth() {
 
-  if (!isAuthenticated()) {
+  // if (!isAuthenticated()) {
 
-    server.send(
-      401,
-      "application/json",
-      "{\"auth\":false}");
+  //   server.send(
+  //     401,
+  //     "application/json",
+  //     "{\"auth\":false}");
 
-    return;
-  }
+  //   return;
+  // }
 
   String json = "{";
 
@@ -208,10 +208,10 @@ void handleLogin() {
 
 void handleSystemStatus() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   String json = "{";
 
@@ -229,10 +229,10 @@ void handleSystemStatus() {
 
 void handleHistory() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   String date = server.arg("date");
 
@@ -373,10 +373,10 @@ void handleHistory() {
 // ===== HANDLE BUZZER =====
 void handleStatusBuzzer() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   String json = "{";
 
@@ -392,10 +392,10 @@ void handleStatusBuzzer() {
 
 void handleStopBuzzer() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   if (sysConfig.stop_after_alarm) {
 
@@ -418,10 +418,10 @@ void handleStopBuzzer() {
 // ===== HANDLE DOWNLOAD BUTTON =====
 void handleDownload() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "text/plain", "Unauthorized");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "text/plain", "Unauthorized");
+  //   return;
+  // }
 
   if (!server.hasArg("date")) {
     server.send(400, "text/plain", "Missing date");
@@ -451,10 +451,10 @@ void handleDownload() {
 // ===== GET CONFIG DARI MEMORY ESP =====
 void handleGetConfig() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   String json = "{";
 
@@ -523,15 +523,15 @@ void handleSetConfig() {
   // ========================
   // AUTH
   // ========================
-  if (!isAuthenticated()) {
+  // if (!isAuthenticated()) {
 
-    server.send(
-      401,
-      "application/json",
-      "{\"error\":\"unauthorized\"}");
+  //   server.send(
+  //     401,
+  //     "application/json",
+  //     "{\"error\":\"unauthorized\"}");
 
-    return;
-  }
+  //   return;
+  // }
 
   // ========================
   // TEMP CONFIG
@@ -886,7 +886,7 @@ void handleSetConfig() {
     setProximityActiveLow(sysConfig.prox_active_low);
 
     logToFile(
-      "📡 Proximity mode: %s",
+      "📡 Proximity mode updated: %s",
       sysConfig.prox_active_low ? "LOW" : "HIGH");
   }
 
@@ -896,21 +896,26 @@ void handleSetConfig() {
     sysStopAlarm();
 
     logToFile(
-      "🚨 Alarm device: %s",
+      "🚨 Alarm device updated: %s",
       sysConfig.alarm_enabled ? "LOW" : "HIGH");
   }
 
   // partition berubah
   if (partitionChanged) {
 
-    resetTodayStats();
+    DateTime now = getNow();
+
+    resetRuntimePartitionStats(
+      now.hour() / sysConfig.partition_hours);
+
     invalidateBaselineCache();
 
     logToFile(
-      "📊 Partition stats reset");
+      "📊 Partition stats reset. | updated: %u hours",
+      sysConfig.partition_hours);
   }
 
-  // interval berubah
+  // record interval berubah
   if (intervalChanged) {
 
     logToFile(
@@ -926,13 +931,13 @@ void handleSetConfig() {
       sysConfig.estrus_threshold_pct);
   }
 
-  // retention berubah
+  // retention days berubah
   if (retentionChanged) {
 
     invalidateBaselineCache();
 
     logToFile(
-      "🗂 Retention updated: %u days",
+      "🗂 Retention days updated: %u days",
       sysConfig.retention_days);
   }
 
@@ -940,7 +945,7 @@ void handleSetConfig() {
   if (stopAlarmChanged) {
 
     logToFile(
-      "🔔 stop_after_alarm: %d",
+      "🔔 stop_after_alarm updated: %d",
       sysConfig.stop_after_alarm);
   }
 
@@ -950,7 +955,7 @@ void handleSetConfig() {
     invalidateBaselineCache();
 
     logToFile(
-      "🔁 min_baseline_samples: %d",
+      "🔁 min_baseline_samples updated: %d",
       sysConfig.min_baseline_samples);
   }
 
@@ -960,7 +965,7 @@ void handleSetConfig() {
     resetDirtyDetection();
 
     logToFile(
-      "🔁 dirty_timeout_samples: %d",
+      "🔁 dirty_timeout_samples updated: %d",
       sysConfig.dirty_timeout_samples);
   }
 
@@ -994,6 +999,9 @@ void handleSetConfig() {
   json += "\"success\":true,";
   json += "\"restart\":";
   json += needRestart ? "true" : "false";
+  json += ",";
+
+  json += "\"message\":config updated";
 
   json += "}";
 
@@ -1015,10 +1023,10 @@ void handleSetConfig() {
 
 void handleResetConfig() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   resetConfig();
 
@@ -1028,10 +1036,10 @@ void handleResetConfig() {
 // ===== HANDLE LATEST SYSTEM =====
 void handleLatest() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   String json = "{";
 
@@ -1087,10 +1095,10 @@ void handleLatest() {
 
 void handleEstrus() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   String json = "{";
 
@@ -1135,10 +1143,10 @@ void handleEstrus() {
 
 void handleStorage() {
 
-  if (!isAuthenticated()) {
-    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-    return;
-  }
+  // if (!isAuthenticated()) {
+  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+  //   return;
+  // }
 
   if (!SYS.sd_ok) {
 
@@ -1200,15 +1208,15 @@ void handleStorage() {
 
 void handleHealth() {
 
-  if (!isAuthenticated()) {
+  // if (!isAuthenticated()) {
 
-    server.send(
-      401,
-      "application/json",
-      "{\"error\":\"unauthorized\"}");
+  //   server.send(
+  //     401,
+  //     "application/json",
+  //     "{\"error\":\"unauthorized\"}");
 
-    return;
-  }
+  //   return;
+  // }
 
   String json = "{";
 
@@ -1272,13 +1280,13 @@ void initWebServer() {
   server.on("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
 
   // CONFIG
-  server.on("/api/config/get", HTTP_GET, handleGetConfig);      // untuk load config dari esp
-  server.on("/api/config/set", HTTP_GET, handleSetConfig);      // untuk ubah config
+  server.on("/api/config", HTTP_GET, handleGetConfig);      // untuk load config dari esp
+  server.on("/api/config", HTTP_POST, handleSetConfig);      // untuk ubah config
   server.on("/api/config/reset", HTTP_GET, handleResetConfig);  // untuk reset config (belum dipakai)
 
   // CONTROL
   server.on("/api/status/buzzer", HTTP_GET, handleStatusBuzzer);  // untuk cek status alarm
-  server.on("/api/buzzer/stop", HTTP_GET, handleStopBuzzer);      // untuk tombol stop alarm
+  server.on("/api/buzzer/stop", HTTP_POST, handleStopBuzzer);      // untuk tombol stop alarm
 
   // SYSTEM
   server.on("/api/system", HTTP_GET, handleSystemStatus);  // untuk cek kondisi device

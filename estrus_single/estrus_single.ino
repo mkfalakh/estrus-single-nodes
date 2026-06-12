@@ -38,11 +38,16 @@ void setup() {
   initRTC();  // sysSetRTC()
 
   initLogger();
+
   initSDCard();  // di sini set sysSetSD()
-  setSDReadyForLog(SYS.sd_ok);
+
+  if (SYS.sd_ok) {
+    setSDReadyForLog(true);
+  }
+
   initCSVWriter();
 
-  initINA226();  // sysSetSensor()
+  initINA226();  // sysSetSensor() // comment ini jika buat trial atau tidak ada modulnya
 
   initProximity();  // pinMode sensor
   setProximityActiveLow(sysConfig.prox_active_low);
@@ -63,19 +68,16 @@ void setup() {
   // FINAL LOG
   // =========================
   logToFile("🚀 System Ready");
-
-  // Serial.printf(
-  //   "sdMutex=%p logQueue=%p sensorQueue=%p\n",
-  //   sdMutex,
-  //   logQueue,
-  //   sensorQueue);
+  logToFile(
+    "Node:%s Animal:%s",
+    sysConfig.node_id,
+    sysConfig.animal_id);
 }
 
 void loop() {
 
   handleWebServer();
   cleanupSessions();
-  // checkIntervalTrigger();
 
   // =========================
   // DEBUG SYSTEM
@@ -111,7 +113,7 @@ void loop() {
 
     logToFile("🔄 Restarting system after change device ID");
 
-    delay(100);
+    delay(500);
 
     ESP.restart();
   }

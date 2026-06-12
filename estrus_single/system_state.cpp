@@ -72,13 +72,6 @@ void sysSetEstrusResult(
 
   SYS.estrus =
     r.estrus;
-
-  if (r.valid && r.estrus && !lastEstrus) {
-
-    sysStartAlarm();
-  }
-
-  lastEstrus = r.estrus;
 }
 
 void sysSetSensorState(bool s1, bool s2, bool d1, bool d2) {

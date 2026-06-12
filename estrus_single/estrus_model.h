@@ -22,9 +22,9 @@ struct EstrusResult {
   uint32_t baseline_samples;
 };
 
-void resetTodayStats();
+void resetRuntimePartitionStats(uint8_t partition);
 void updatePartitionStats(bool standing);
-void checkPartitionTransition();
+void checkTimeTransitions();
 
 EstrusResult evaluateEstrus();
 
