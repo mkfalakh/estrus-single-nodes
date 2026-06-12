@@ -13,12 +13,9 @@ static bool isOlderThanRetention(
 
   DateTime now = getNow();
 
-  uint32_t ageDays =
-    (now.unixtime() - fileDate.unixtime())
-    / 86400UL;
+  uint32_t ageDays = (now.unixtime() - fileDate.unixtime()) / 86400UL;
 
-  return (
-    ageDays > sysConfig.retention_days);
+  return (ageDays > sysConfig.retention_days);
 }
 
 static bool parseDateFromFilename(
@@ -35,7 +32,7 @@ static bool parseDateFromFilename(
   // hapus extension
   if (name.endsWith(".csv")) {
     name.remove(name.length() - 4);
-  } else if (name.endsWith(".txt")) {
+  } else if (name.endsWith(".log")) {
     name.remove(name.length() - 4);
   }
 
@@ -123,11 +120,18 @@ static void cleanupFolder(
 
       file.close();
 
-      SD.remove(fullPath);
+      if (SD.remove(fullPath)) {
 
-      logToFile(
-        "🗑 Deleted: %s",
-        fullPath.c_str());
+        logToFile(
+          "🗑 Deleted: %s",
+          fullPath.c_str());
+
+      } else {
+
+        logToFile(
+          "⚠️ Failed delete: %s",
+          fullPath.c_str());
+      }
 
     } else {
 
@@ -139,10 +143,10 @@ static void cleanupFolder(
 }
 
 // TASK
-void cleanupStorageTask(
-  void *pv) {
+void cleanupStorageTask(void *pv) {
 
-  unsigned long lastRun = 0;
+  bool firstRun = true;
+  static uint8_t lastCleanupDay = 255;
 
   while (true) {
 
@@ -153,16 +157,19 @@ void cleanupStorageTask(
       continue;
     }
 
-    if (millis() - lastRun > 86400000UL) {
+    DateTime now = getNow();
 
-      lastRun =
-        millis();
+    if (firstRun || (now.day() != lastCleanupDay && now.hour() == 0 && now.minute() < 5)) {
+
+      firstRun = false;
+
+      lastCleanupDay = now.day();
 
       if (sdMutex && xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000))) {
 
         cleanupFolder("/data");
 
-        cleanupFolder("/log");
+        cleanupFolder("/logs");
 
         xSemaphoreGive(
           sdMutex);
