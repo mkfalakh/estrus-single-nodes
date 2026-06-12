@@ -671,10 +671,11 @@
         </div>
 
         <!-- Konfigurasi Sisi Kanan -->
+        <!-- Konfigurasi Rumus Estrus -->
         <div class="card config-panel">
           <h3
             style="
-              margin-bottom: 20px;
+              margin-bottom: 18px;
               font-size: 1rem;
               display: flex;
               align-items: center;
@@ -689,12 +690,11 @@
               stroke="currentColor"
               stroke-width="2"
             >
-              <circle cx="12" cy="12" r="3"></circle>
               <path
-                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
-              ></path>
+                d="M12 5.5C12 6.88071 10.8807 8 9.5 8C8.11929 8 7 6.88071 7 5.5M12 5.5C12 4.11929 10.8807 3 9.5 3C8.11929 3 7 4.11929 7 5.5M12 5.5H21M7 5.5H3M19 12C19 13.3807 17.8807 14.5 16.5 14.5C15.1193 14.5 14 13.3807 14 12M19 12C19 10.6193 17.8807 9.5 16.5 9.5C15.1193 9.5 14 10.6193 14 12M19 12H21M14 12H3M10 18.5C10 19.8807 8.88071 21 7.5 21C6.11929 21 5 19.8807 5 18.5M10 18.5C10 17.1193 8.88071 16 7.5 16C6.11929 16 5 17.1193 5 18.5M10 18.5H21M5 18.5H3"
+              />
             </svg>
-            Konfigurasi Perangkat
+            Rumus Estrus Monitoring
           </h3>
 
           <form
@@ -705,35 +705,17 @@
             "
           >
             <div class="form-grid">
-              <div class="form-group full-width">
-                <label>Node ID</label>
-                <input
-                  type="text"
-                  id="nodeId"
-                  onchange="showRestartWarn()"
-                  placeholder="NODE-01, NODE-02, ..."
-                  required
-                />
-                <div id="restart-warn" class="warning-box">
-                  ⚠️ ID baru akan memicu restart pada perangkat!
-                </div>
-              </div>
-
               <div class="form-group">
                 <label>Interval (Jam)</label>
                 <input
                   type="number"
                   id="interval"
+                  step="1"
+                  min="1"
+                  max="24"
                   placeholder="1 ~ 24"
                   required
                 />
-              </div>
-              <div class="form-group">
-                <label>Status Alarm</label>
-                <select id="buzzer_enabled">
-                  <option value="0">Tidak Aktif</option>
-                  <option value="1">Aktif</option>
-                </select>
               </div>
 
               <div class="form-group">
@@ -742,6 +724,8 @@
                   type="number"
                   id="score"
                   step="0.01"
+                  min="0.1"
+                  max="5.0"
                   placeholder="0.1 ~ 5.0"
                   required
                 />
@@ -752,6 +736,8 @@
                   type="number"
                   id="ratioTrigger"
                   step="0.1"
+                  min="0.1"
+                  max="10.0"
                   placeholder="0.1 ~ 10.0"
                   required
                 />
@@ -762,6 +748,9 @@
                 <input
                   type="number"
                   id="persist"
+                  step="1"
+                  min="1"
+                  max="20"
                   placeholder="1 ~ 20"
                   required
                 />
@@ -772,6 +761,8 @@
                   type="number"
                   id="ema"
                   step="0.01"
+                  min="0.01"
+                  max="1.0"
                   placeholder="0.01 ~ 1.0"
                   required
                 />
@@ -782,19 +773,64 @@
                 <input
                   type="number"
                   id="activityMin"
+                  step="1"
+                  min="1"
+                  max="10000"
                   placeholder="1 ~ 10000"
                   required
                 />
               </div>
-              <div class="form-group">
+              <div class="form-group full-width">
                 <label>Balance Minimum</label>
                 <input
                   type="number"
                   id="balanceMin"
                   step="0.01"
+                  min="0.01"
+                  max="1.0"
                   placeholder="0.01 ~ 1.0"
                   required
                 />
+              </div>
+
+              <!-- Konfigurasi Perangkat -->
+              <h3
+                style="
+                  margin-bottom: 10px;
+                  font-size: 1rem;
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                "
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path
+                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+                  ></path>
+                </svg>
+                Konfigurasi Perangkat
+              </h3>
+
+              <div class="form-group full-width">
+                <label>Node ID</label>
+                <input
+                  type="text"
+                  id="nodeId"
+                  onchange="showRestartWarn()"
+                  placeholder="cth. NODE-01, NODE-02, ..."
+                  required
+                />
+                <div id="restart-warn" class="warning-box">
+                  ⚠️ ID baru akan memicu restart pada perangkat!
+                </div>
               </div>
 
               <div class="form-group">
@@ -805,22 +841,32 @@
                 </select>
               </div>
               <div class="form-group">
-                <label>Current Threshold (A)</label>
+                <label>Status Alarm</label>
+                <select id="buzzer_enabled">
+                  <option value="0">Tidak Aktif</option>
+                  <option value="1">Aktif</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Current TH | Batas Alert Maks Arus (mA)</label>
                 <input
                   type="number"
                   step="0.1"
-                  placeholder="Sek Perbaikan!"
-                  disabled
+                  min="100.0"
+                  max="150.0"
+                  placeholder="Batas Alert Maks Arus (mA)"
                 />
               </div>
 
-              <div class="form-group full-width">
-                <label>Power Threshold (W)</label>
+              <div class="form-group">
+                <label>Power TH | Batas Alert Maks Daya (mW)</label>
                 <input
                   type="number"
                   step="0.1"
-                  placeholder="Sek Perbaikan!"
-                  disabled
+                  min="400.0"
+                  max="600.0"
+                  placeholder="Batas Alert Maks Daya (mW)"
                 />
               </div>
               <!-- reset config button -->
@@ -834,7 +880,7 @@
               <!-- save config button -->
               <button
                 type="submit"
-                class="btn btn-primary"
+                class="btn btn-primary full-width"
                 onclick="saveConfig()"
               >
                 Simpan Konfigurasi
