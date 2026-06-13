@@ -26,7 +26,7 @@ String getCSVPath() {
 
   String path = "/data/";
 
-  path += sysConfig.node_id;
+  // path += sysConfig.node_id;
   path += "-";
   path += todayDateStr();
   path += ".csv";

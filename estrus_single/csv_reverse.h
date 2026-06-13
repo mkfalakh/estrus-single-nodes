@@ -3,7 +3,7 @@
 #include <SD.h>
 
 int readCsvPage(File &file,
-                char (*lines)[128],
+                char (*lines)[160],
                 int page,
                 int limit,
                 bool &hasNext);

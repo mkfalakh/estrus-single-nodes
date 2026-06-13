@@ -546,19 +546,17 @@ function renderHistory(rows) {
 
   tbody.innerHTML = "";
 
-  rows.forEach((line) => {
-    const parts = line.split(",");
-
+  rows.forEach((row) => {
     const tr = document.createElement("tr");
 
     tr.innerHTML = `
-      <td>${parts[0] || "-"}</td>
-      <td>${parts[1] || "-"}</td>
-      <td>${parts[2] || 0}</td>
-      <td>${parts[3] || 0}</td>
-      <td>${parts[4] || 0}</td>
-      <td>${parts[5] || 0}</td>
-      <td>${parts[6] || 0}</td>
+      <td>${row.device_id ?? "-"}</td>
+      <td>${row.animal_id ?? "-"}</td>
+      <td>${row.timestamp ?? "-"}</td>
+      <td>${row.sensor1_state ?? 0}</td>
+      <td>${row.sensor2_state ?? 0}</td>
+      <td>${row.deviation ?? 0}</td>
+      <td>${row.estrus ?? 0}</td>
     `;
 
     tbody.appendChild(tr);

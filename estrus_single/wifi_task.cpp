@@ -3,7 +3,7 @@
 #include "logger.h"
 #include "system_state.h"
 
-#define WIFI_TIMEOUT_MS 300000UL // 5 menit
+#define WIFI_TIMEOUT_MS 600000UL // 10 menit
 
 void wifiTask(void *pv) {
 

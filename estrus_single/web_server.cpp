@@ -16,6 +16,7 @@
 #include <WebServer.h>
 #include <SD.h>
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 WebServer server(80);
 
@@ -87,6 +88,71 @@ static String buildJSONRow(const String& line) {
   s += line;
   s += "\"";
   return s;
+}
+
+// kolom sesuai header CSV di csv_writer.cpp
+static const char* CSV_COLUMNS[] = {
+  "device_id",
+  "animal_id",
+  "timestamp",
+  "sensor1_state",
+  "sensor2_state",
+  "sensor1_dirty",
+  "sensor2_dirty",
+  "deviation",
+  "estrus",
+  "voltage",
+  "current",
+  "battery_pct"
+};
+static const int CSV_COLUMN_COUNT = sizeof(CSV_COLUMNS) / sizeof(CSV_COLUMNS[0]);
+
+// fields yang ditulis sebagai string di JSON (sisanya angka/bool, tanpa quote)
+static bool isCsvStringField(const char* col) {
+  return strcmp(col, "device_id") == 0
+    || strcmp(col, "animal_id") == 0
+    || strcmp(col, "timestamp") == 0;
+}
+
+// ubah satu baris CSV ("a,b,c,...") menjadi objek JSON {"device_id":"a",...}
+static String csvRowToJson(const char* line) {
+
+  String json = "{";
+
+  int col = 0;
+  int start = 0;
+  int len = strlen(line);
+
+  for (int i = 0; i <= len && col < CSV_COLUMN_COUNT; i++) {
+
+    if (i == len || line[i] == ',') {
+
+      String value = String(line).substring(start, i);
+
+      if (col > 0) json += ",";
+
+      json += "\"";
+      json += CSV_COLUMNS[col];
+      json += "\":";
+
+      if (isCsvStringField(CSV_COLUMNS[col])) {
+        json += "\"";
+        json += escapeJson(value.c_str());
+        json += "\"";
+      } else if (value.length() == 0) {
+        json += "0";
+      } else {
+        json += value;
+      }
+
+      col++;
+      start = i + 1;
+    }
+  }
+
+  json += "}";
+
+  return json;
 }
 
 bool handleFileRead(String path) {
@@ -236,7 +302,11 @@ void handleHistory() {
 
   String date = server.arg("date");
 
+  logToFile("📜 [history] request date=" + date);
+
   if (date.length() != 10 || date[4] != '-' || date[7] != '-') {
+
+    logToFile("❌ [history] invalid date: " + date);
 
     server.send(
       400,
@@ -247,16 +317,18 @@ void handleHistory() {
   }
 
   int page = 0;
-  int limit = 20;
+  int limit = 10;
 
   String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
 
   if (!SD.exists(filename)) {
 
+    logToFile("⚠️ [history] file not found: " + filename);
+
     server.send(
       200,
       "application/json",
-      "{\"rows\":[],\"has_next\":false}");
+      "{\"date\":\"" + date + "\",\"rows\":[],\"has_next\":false}");
 
     return;
   }
@@ -264,6 +336,8 @@ void handleHistory() {
   File file = SD.open(filename);
 
   if (!file) {
+
+    logToFile("❌ [history] failed to open: " + filename);
 
     sysSetSD(false);
 
@@ -302,19 +376,28 @@ void handleHistory() {
     //   100);
   }
 
-  // char lines[LIMIT][128]; // alternatif jika PSRAM tidak bisa
+  // char lines[LIMIT][160]; // alternatif jika PSRAM tidak bisa
 
-  // menggunakan PSRAM
-  char(*lines)[128] =
-    (char(*)[128])ps_malloc(
+  // coba PSRAM dulu, fallback ke heap biasa jika PSRAM tidak tersedia
+  char(*lines)[160] =
+    (char(*)[160])ps_malloc(
       limit * sizeof(*lines));
 
   if (!lines) {
 
+    logToFile("⚠️ [history] ps_malloc failed, fallback to malloc, limit=" + String(limit));
+
+    lines = (char(*)[160])malloc(limit * sizeof(*lines));
+  }
+
+  if (!lines) {
+
+    logToFile("❌ [history] malloc failed, limit=" + String(limit));
+
     server.send(
       500,
       "application/json",
-      "{\"error\":\"psram\"}");
+      "{\"error\":\"oom\"}");
 
     file.close();
 
@@ -335,8 +418,13 @@ void handleHistory() {
 
   file.close();
 
+  logToFile("✅ [history] date=" + date + " page=" + String(page) + " limit=" + String(limit) + " count=" + String(count) + " hasNext=" + String(hasNext ? "true" : "false"));
 
   String json = "{";
+
+  json += "\"date\":\"";
+  json += date;
+  json += "\",";
 
   json += "\"page\":";
   json += String(page);
@@ -350,9 +438,7 @@ void handleHistory() {
   json += ",\"rows\":[";
 
   for (int i = 0; i < count; i++) {
-    json += "\"";
-    json += escapeJson(lines[i]);
-    json += "\"";
+    json += csvRowToJson(lines[i]);
 
     if (i < count - 1) json += ",";
   }
@@ -534,6 +620,42 @@ void handleSetConfig() {
   // }
 
   // ========================
+  // PARSE JSON BODY
+  // ========================
+  String body = server.hasArg("plain") ? server.arg("plain") : "";
+
+  logToFile("📝 [config] POST /api/config body=" + body);
+
+  DynamicJsonDocument doc(768);
+
+  if (body.length() > 0) {
+
+    DeserializationError err = deserializeJson(doc, body);
+
+    if (err) {
+
+      logToFile("❌ [config] invalid JSON: %s", err.c_str());
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid json body\"}");
+
+      return;
+    }
+  }
+
+  // helper: cek key ada di JSON body
+  auto hasField = [&](const char *key) {
+    return doc.containsKey(key);
+  };
+
+  // helper: ambil value sebagai String
+  auto fieldStr = [&](const char *key) {
+    return String((const char *)doc[key]);
+  };
+
+  // ========================
   // TEMP CONFIG
   // ========================
   SystemConfig temp = sysConfig;
@@ -543,9 +665,9 @@ void handleSetConfig() {
   // ========================
   // NODE ID
   // ========================
-  if (server.hasArg("node_id")) {
+  if (hasField("node_id")) {
 
-    String id = server.arg("node_id");
+    String id = fieldStr("node_id");
 
     id.trim();
 
@@ -583,11 +705,11 @@ void handleSetConfig() {
   // ========================
   // PROX MODE
   // ========================
-  if (server.hasArg("prox_low")) {
+  if (hasField("prox_low")) {
 
-    String v = server.arg("prox_low");
+    int v = doc["prox_low"].as<int>();
 
-    if (v != "0" && v != "1") {
+    if (v != 0 && v != 1) {
 
       server.send(
         400,
@@ -597,17 +719,17 @@ void handleSetConfig() {
       return;
     }
 
-    temp.prox_active_low = (v == "1");
+    temp.prox_active_low = (v == 1);
   }
 
   // ========================
   // BUZZER/ALARM
   // ========================
-  if (server.hasArg("alarm_enabled")) {
+  if (hasField("alarm_enabled")) {
 
-    String v = server.arg("alarm_enabled");
+    int v = doc["alarm_enabled"].as<int>();
 
-    if (v != "0" && v != "1") {
+    if (v != 0 && v != 1) {
 
       server.send(
         400,
@@ -617,15 +739,15 @@ void handleSetConfig() {
       return;
     }
 
-    temp.alarm_enabled = (v == "1");
+    temp.alarm_enabled = (v == 1);
   }
 
   // ========================
   // ANIMAL ID
   // ========================
-  if (server.hasArg("animal_id")) {
+  if (hasField("animal_id")) {
 
-    String id = server.arg("animal_id");
+    String id = fieldStr("animal_id");
 
     id.trim();
 
@@ -663,10 +785,10 @@ void handleSetConfig() {
   // ========================
   // WIFI AP PASSWORD
   // ========================
-  if (server.hasArg("ap_password")) {
+  if (hasField("ap_password")) {
 
     String pass =
-      server.arg("ap_password");
+      fieldStr("ap_password");
 
     pass.trim();
 
@@ -703,9 +825,9 @@ void handleSetConfig() {
   // ========================
   // RECORD INTERVAL SEC
   // ========================
-  if (server.hasArg("record_interval_sec")) {
+  if (hasField("record_interval_sec")) {
 
-    int v = server.arg("record_interval_sec").toInt();
+    int v = doc["record_interval_sec"].as<int>();
 
     if (v < 10 || v > 3600) {
 
@@ -723,9 +845,9 @@ void handleSetConfig() {
   // ========================
   // RETENTION DAYS
   // ========================
-  if (server.hasArg("retention_days")) {
+  if (hasField("retention_days")) {
 
-    int v = server.arg("retention_days").toInt();
+    int v = doc["retention_days"].as<int>();
 
     if (v < 1 || v > 14) {
 
@@ -743,9 +865,9 @@ void handleSetConfig() {
   // ========================
   // PARTITION HOURS
   // ========================
-  if (server.hasArg("partition_hours")) {
+  if (hasField("partition_hours")) {
 
-    int v = server.arg("partition_hours").toInt();
+    int v = doc["partition_hours"].as<int>();
 
     if (v < 1 || v > 24 || (24 % v) != 0) {
 
@@ -763,9 +885,9 @@ void handleSetConfig() {
   // ========================
   // ESTRUS THRESHOLD PCT
   // ========================
-  if (server.hasArg("estrus_threshold_pct")) {
+  if (hasField("estrus_threshold_pct")) {
 
-    float v = server.arg("estrus_threshold_pct").toFloat();
+    float v = doc["estrus_threshold_pct"].as<float>();
 
     if (v < 0.0 || v > 100.0) {
 
@@ -783,11 +905,11 @@ void handleSetConfig() {
   // ========================
   // STOP AFTER ALARM
   // ========================
-  if (server.hasArg("stop_after_alarm")) {
+  if (hasField("stop_after_alarm")) {
 
-    String v = server.arg("stop_after_alarm");
+    int v = doc["stop_after_alarm"].as<int>();
 
-    if (v != "0" && v != "1") {
+    if (v != 0 && v != 1) {
 
       server.send(
         400,
@@ -797,15 +919,15 @@ void handleSetConfig() {
       return;
     }
 
-    temp.stop_after_alarm = (v == "1");
+    temp.stop_after_alarm = (v == 1);
   }
 
   // ========================
   // MIN BASELINE SAMPLES
   // ========================
-  if (server.hasArg("min_baseline_samples")) {
+  if (hasField("min_baseline_samples")) {
 
-    int v = server.arg("min_baseline_samples").toInt();
+    int v = doc["min_baseline_samples"].as<int>();
 
     if (v < 10 || v > 1000) {
 
@@ -823,9 +945,9 @@ void handleSetConfig() {
   // ========================
   // DIRTY TIMEOUT SAMPLES
   // ========================
-  if (server.hasArg("dirty_timeout_samples")) {
+  if (hasField("dirty_timeout_samples")) {
 
-    int v = server.arg("dirty_timeout_samples").toInt();
+    int v = doc["dirty_timeout_samples"].as<int>();
 
     if (v < 10 || v > 1000) {
 
@@ -843,9 +965,9 @@ void handleSetConfig() {
   // ========================
   // POWER & CURRENT BATTERY
   // ========================
-  if (server.hasArg("current_threshold")) {
+  if (hasField("current_threshold")) {
 
-    float v = server.arg("current_threshold").toFloat();
+    float v = doc["current_threshold"].as<float>();
 
     if (v < 100.0 || v > 150.0) {
 
@@ -861,9 +983,9 @@ void handleSetConfig() {
   }
 
   // POWER
-  if (server.hasArg("power_threshold")) {
+  if (hasField("power_threshold")) {
 
-    float v = server.arg("power_threshold").toFloat();
+    float v = doc["power_threshold"].as<float>();
 
     if (v < 400.0 || v > 600.0) {
 
@@ -945,7 +1067,7 @@ void handleSetConfig() {
 
   // estrus threshold berubah
   if (estrusThresholdChanged) {
-
+    
     logToFile(
       "📈 Estrus threshold updated: %.1f%%",
       sysConfig.estrus_threshold_pct);
@@ -1008,6 +1130,32 @@ void handleSetConfig() {
   // ==== SAVE CONFIG ====
   saveConfig();
 
+  // ========================
+  // LOG SAVED CONFIG (JSON)
+  // ========================
+  {
+    String savedJson = "{";
+
+    savedJson += "\"node_id\":\"" + String(sysConfig.node_id) + "\",";
+    savedJson += "\"animal_id\":\"" + String(sysConfig.animal_id) + "\",";
+    savedJson += "\"ap_password\":\"" + String(sysConfig.ap_password) + "\",";
+    savedJson += "\"prox_low\":" + String(sysConfig.prox_active_low ? 1 : 0) + ",";
+    savedJson += "\"alarm_enabled\":" + String(sysConfig.alarm_enabled ? 1 : 0) + ",";
+    savedJson += "\"record_interval_sec\":" + String(sysConfig.record_interval_sec) + ",";
+    savedJson += "\"retention_days\":" + String(sysConfig.retention_days) + ",";
+    savedJson += "\"partition_hours\":" + String(sysConfig.partition_hours) + ",";
+    savedJson += "\"estrus_threshold_pct\":" + String(sysConfig.estrus_threshold_pct, 2) + ",";
+    savedJson += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? 1 : 0) + ",";
+    savedJson += "\"min_baseline_samples\":" + String(sysConfig.min_baseline_samples) + ",";
+    savedJson += "\"dirty_timeout_samples\":" + String(sysConfig.dirty_timeout_samples) + ",";
+    savedJson += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
+    savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold);
+
+    savedJson += "}";
+
+    logToFile("💾 [config] saved=" + savedJson);
+  }
+
   logToFile(
     "⚙️ CONFIG UPDATED");
 
@@ -1021,7 +1169,7 @@ void handleSetConfig() {
   json += needRestart ? "true" : "false";
   json += ",";
 
-  json += "\"message\":config updated";
+  json += "\"message\":\"config updated\"";
 
   json += "}";
 
@@ -1335,6 +1483,27 @@ void handleDevice() {
 }
 
 
+// ===== LOG REQUEST =====
+static void logRequest() {
+  String msg = "📡 ";
+
+  switch (server.method()) {
+    case HTTP_GET: msg += "GET "; break;
+    case HTTP_POST: msg += "POST "; break;
+    default: msg += "OTHER "; break;
+  }
+
+  msg += server.uri();
+  msg += " from ";
+  msg += server.client().remoteIP().toString();
+
+  logToFile(msg);
+}
+
+// shortcut: register route + auto-log request
+#define ROUTE(uri, method, handler) \
+  server.on(uri, method, []() { logRequest(); handler(); })
+
 // ===== INIT WEBSERVER =====
 void initWebServer() {
   // Collect header cookie
@@ -1343,40 +1512,41 @@ void initWebServer() {
   server.collectHeaders(headerKeys, headerKeysCount);
 
   // api endpoint
-  server.on("/", HTTP_GET, []() {
+  ROUTE("/", HTTP_GET, []() {
     handleFileRead("/index.html");
   });
 
   // AUTH
-  server.on("/api/check", HTTP_GET, handleCheckAuth);
-  server.on("/api/login", HTTP_GET, handleLogin);
-  server.on("/api/logout", HTTP_GET, handleLogout);
+  ROUTE("/api/check", HTTP_GET, handleCheckAuth);
+  ROUTE("/api/login", HTTP_GET, handleLogin);
+  ROUTE("/api/logout", HTTP_GET, handleLogout);
 
   // DEVICE NODE
-  server.on("/api/node/latest", HTTP_GET, handleLatest);    // snapshot hardware & health
-  server.on("/api/node/estrus", HTTP_GET, handleEstrus);    // informasi model estrus
-  server.on("/api/node/history", HTTP_GET, handleHistory);  // untuk melihat data csv
-  server.on("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
-  server.on("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
+  ROUTE("/api/node/latest", HTTP_GET, handleLatest);    // snapshot hardware & health
+  ROUTE("/api/node/estrus", HTTP_GET, handleEstrus);    // informasi model estrus
+  ROUTE("/api/node/history", HTTP_GET, handleHistory);  // untuk melihat data csv
+  ROUTE("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
+  ROUTE("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
 
   // CONFIG
-  server.on("/api/config", HTTP_GET, handleGetConfig);          // untuk load config dari esp
-  server.on("/api/config", HTTP_POST, handleSetConfig);         // untuk ubah config
-  server.on("/api/config/reset", HTTP_GET, handleResetConfig);  // untuk reset config (belum dipakai)
+  ROUTE("/api/config", HTTP_GET, handleGetConfig);          // untuk load config dari esp
+  ROUTE("/api/config", HTTP_POST, handleSetConfig);         // untuk ubah config
+  ROUTE("/api/config/reset", HTTP_GET, handleResetConfig);  // untuk reset config (belum dipakai)
 
   // CONTROL
-  server.on("/api/status/buzzer", HTTP_GET, handleStatusBuzzer);  // untuk cek status alarm
-  server.on("/api/buzzer/stop", HTTP_POST, handleStopBuzzer);     // untuk tombol stop alarm
+  ROUTE("/api/status/buzzer", HTTP_GET, handleStatusBuzzer);  // untuk cek status alarm
+  ROUTE("/api/buzzer/stop", HTTP_POST, handleStopBuzzer);     // untuk tombol stop alarm
 
   // SYSTEM
-  server.on("/api/system", HTTP_GET, handleSystemStatus);  // untuk cek kondisi device
-  server.on("/api/storage", HTTP_GET, handleStorage);      // untuk cek kondisi SDCard
+  ROUTE("/api/system", HTTP_GET, handleSystemStatus);  // untuk cek kondisi device
+  ROUTE("/api/storage", HTTP_GET, handleStorage);      // untuk cek kondisi SDCard
 
-  server.on("/ping", HTTP_GET, []() {
+  ROUTE("/ping", HTTP_GET, []() {
     server.send(200, "text/plain", "OK");
   });
 
   server.onNotFound([]() {
+    logRequest();
     if (!handleFileRead(server.uri())) {
       server.send(404, "text/plain", "Not Found");
     }

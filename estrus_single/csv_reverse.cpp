@@ -1,7 +1,7 @@
 #include "csv_reverse.h"
 
 int readCsvPage(File &file,
-                char (*lines)[128],
+                char (*lines)[160],
                 int page,
                 int limit,
                 bool &hasNext) {
@@ -12,7 +12,7 @@ int readCsvPage(File &file,
     return 0;
   }
 
-  const int BUFFER_SIZE = 128;
+  const int BUFFER_SIZE = 160;
 
   int fileSize = file.size();
 
@@ -65,8 +65,8 @@ int readCsvPage(File &file,
 
         // skip header CSV
         if (strncmp(buffer,
-                    "node_id,",
-                    8)
+                    "device_id,",
+                    10)
             != 0) {
 
           // sudah masuk halaman yang diminta
@@ -74,9 +74,9 @@ int readCsvPage(File &file,
 
             strncpy(lines[copiedLines],
                     buffer,
-                    127);
+                    BUFFER_SIZE - 1);
 
-            lines[copiedLines][127] = '\0';
+            lines[copiedLines][BUFFER_SIZE - 1] = '\0';
 
             copiedLines++;
           }
