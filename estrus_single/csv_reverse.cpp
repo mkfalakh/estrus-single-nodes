@@ -65,8 +65,8 @@ int readCsvPage(File &file,
 
         // skip header CSV
         if (strncmp(buffer,
-                    "node_id,",
-                    8)
+                    "device_id,",
+                    10)
             != 0) {
 
           // sudah masuk halaman yang diminta
