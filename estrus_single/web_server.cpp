@@ -16,6 +16,7 @@
 #include <WebServer.h>
 #include <SD.h>
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 WebServer server(80);
 
@@ -375,18 +376,18 @@ void handleHistory() {
     //   100);
   }
 
-  // char lines[LIMIT][128]; // alternatif jika PSRAM tidak bisa
+  // char lines[LIMIT][160]; // alternatif jika PSRAM tidak bisa
 
   // coba PSRAM dulu, fallback ke heap biasa jika PSRAM tidak tersedia
-  char(*lines)[128] =
-    (char(*)[128])ps_malloc(
+  char(*lines)[160] =
+    (char(*)[160])ps_malloc(
       limit * sizeof(*lines));
 
   if (!lines) {
 
     logToFile("⚠️ [history] ps_malloc failed, fallback to malloc, limit=" + String(limit));
 
-    lines = (char(*)[128])malloc(limit * sizeof(*lines));
+    lines = (char(*)[160])malloc(limit * sizeof(*lines));
   }
 
   if (!lines) {
@@ -619,6 +620,42 @@ void handleSetConfig() {
   // }
 
   // ========================
+  // PARSE JSON BODY
+  // ========================
+  String body = server.hasArg("plain") ? server.arg("plain") : "";
+
+  logToFile("📝 [config] POST /api/config body=" + body);
+
+  DynamicJsonDocument doc(768);
+
+  if (body.length() > 0) {
+
+    DeserializationError err = deserializeJson(doc, body);
+
+    if (err) {
+
+      logToFile("❌ [config] invalid JSON: %s", err.c_str());
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid json body\"}");
+
+      return;
+    }
+  }
+
+  // helper: cek key ada di JSON body
+  auto hasField = [&](const char *key) {
+    return doc.containsKey(key);
+  };
+
+  // helper: ambil value sebagai String
+  auto fieldStr = [&](const char *key) {
+    return String((const char *)doc[key]);
+  };
+
+  // ========================
   // TEMP CONFIG
   // ========================
   SystemConfig temp = sysConfig;
@@ -628,9 +665,9 @@ void handleSetConfig() {
   // ========================
   // NODE ID
   // ========================
-  if (server.hasArg("node_id")) {
+  if (hasField("node_id")) {
 
-    String id = server.arg("node_id");
+    String id = fieldStr("node_id");
 
     id.trim();
 
@@ -668,11 +705,11 @@ void handleSetConfig() {
   // ========================
   // PROX MODE
   // ========================
-  if (server.hasArg("prox_low")) {
+  if (hasField("prox_low")) {
 
-    String v = server.arg("prox_low");
+    int v = doc["prox_low"].as<int>();
 
-    if (v != "0" && v != "1") {
+    if (v != 0 && v != 1) {
 
       server.send(
         400,
@@ -682,17 +719,17 @@ void handleSetConfig() {
       return;
     }
 
-    temp.prox_active_low = (v == "1");
+    temp.prox_active_low = (v == 1);
   }
 
   // ========================
   // BUZZER/ALARM
   // ========================
-  if (server.hasArg("alarm_enabled")) {
+  if (hasField("alarm_enabled")) {
 
-    String v = server.arg("alarm_enabled");
+    int v = doc["alarm_enabled"].as<int>();
 
-    if (v != "0" && v != "1") {
+    if (v != 0 && v != 1) {
 
       server.send(
         400,
@@ -702,15 +739,15 @@ void handleSetConfig() {
       return;
     }
 
-    temp.alarm_enabled = (v == "1");
+    temp.alarm_enabled = (v == 1);
   }
 
   // ========================
   // ANIMAL ID
   // ========================
-  if (server.hasArg("animal_id")) {
+  if (hasField("animal_id")) {
 
-    String id = server.arg("animal_id");
+    String id = fieldStr("animal_id");
 
     id.trim();
 
@@ -748,10 +785,10 @@ void handleSetConfig() {
   // ========================
   // WIFI AP PASSWORD
   // ========================
-  if (server.hasArg("ap_password")) {
+  if (hasField("ap_password")) {
 
     String pass =
-      server.arg("ap_password");
+      fieldStr("ap_password");
 
     pass.trim();
 
@@ -788,9 +825,9 @@ void handleSetConfig() {
   // ========================
   // RECORD INTERVAL SEC
   // ========================
-  if (server.hasArg("record_interval_sec")) {
+  if (hasField("record_interval_sec")) {
 
-    int v = server.arg("record_interval_sec").toInt();
+    int v = doc["record_interval_sec"].as<int>();
 
     if (v < 10 || v > 3600) {
 
@@ -808,9 +845,9 @@ void handleSetConfig() {
   // ========================
   // RETENTION DAYS
   // ========================
-  if (server.hasArg("retention_days")) {
+  if (hasField("retention_days")) {
 
-    int v = server.arg("retention_days").toInt();
+    int v = doc["retention_days"].as<int>();
 
     if (v < 1 || v > 14) {
 
@@ -828,9 +865,9 @@ void handleSetConfig() {
   // ========================
   // PARTITION HOURS
   // ========================
-  if (server.hasArg("partition_hours")) {
+  if (hasField("partition_hours")) {
 
-    int v = server.arg("partition_hours").toInt();
+    int v = doc["partition_hours"].as<int>();
 
     if (v < 1 || v > 24 || (24 % v) != 0) {
 
@@ -848,9 +885,9 @@ void handleSetConfig() {
   // ========================
   // ESTRUS THRESHOLD PCT
   // ========================
-  if (server.hasArg("estrus_threshold_pct")) {
+  if (hasField("estrus_threshold_pct")) {
 
-    float v = server.arg("estrus_threshold_pct").toFloat();
+    float v = doc["estrus_threshold_pct"].as<float>();
 
     if (v < 0.0 || v > 100.0) {
 
@@ -868,11 +905,11 @@ void handleSetConfig() {
   // ========================
   // STOP AFTER ALARM
   // ========================
-  if (server.hasArg("stop_after_alarm")) {
+  if (hasField("stop_after_alarm")) {
 
-    String v = server.arg("stop_after_alarm");
+    int v = doc["stop_after_alarm"].as<int>();
 
-    if (v != "0" && v != "1") {
+    if (v != 0 && v != 1) {
 
       server.send(
         400,
@@ -882,15 +919,15 @@ void handleSetConfig() {
       return;
     }
 
-    temp.stop_after_alarm = (v == "1");
+    temp.stop_after_alarm = (v == 1);
   }
 
   // ========================
   // MIN BASELINE SAMPLES
   // ========================
-  if (server.hasArg("min_baseline_samples")) {
+  if (hasField("min_baseline_samples")) {
 
-    int v = server.arg("min_baseline_samples").toInt();
+    int v = doc["min_baseline_samples"].as<int>();
 
     if (v < 10 || v > 1000) {
 
@@ -908,9 +945,9 @@ void handleSetConfig() {
   // ========================
   // DIRTY TIMEOUT SAMPLES
   // ========================
-  if (server.hasArg("dirty_timeout_samples")) {
+  if (hasField("dirty_timeout_samples")) {
 
-    int v = server.arg("dirty_timeout_samples").toInt();
+    int v = doc["dirty_timeout_samples"].as<int>();
 
     if (v < 10 || v > 1000) {
 
@@ -928,9 +965,9 @@ void handleSetConfig() {
   // ========================
   // POWER & CURRENT BATTERY
   // ========================
-  if (server.hasArg("current_threshold")) {
+  if (hasField("current_threshold")) {
 
-    float v = server.arg("current_threshold").toFloat();
+    float v = doc["current_threshold"].as<float>();
 
     if (v < 100.0 || v > 150.0) {
 
@@ -946,9 +983,9 @@ void handleSetConfig() {
   }
 
   // POWER
-  if (server.hasArg("power_threshold")) {
+  if (hasField("power_threshold")) {
 
-    float v = server.arg("power_threshold").toFloat();
+    float v = doc["power_threshold"].as<float>();
 
     if (v < 400.0 || v > 600.0) {
 
@@ -1030,7 +1067,7 @@ void handleSetConfig() {
 
   // estrus threshold berubah
   if (estrusThresholdChanged) {
-
+    
     logToFile(
       "📈 Estrus threshold updated: %.1f%%",
       sysConfig.estrus_threshold_pct);
@@ -1092,6 +1129,32 @@ void handleSetConfig() {
 
   // ==== SAVE CONFIG ====
   saveConfig();
+
+  // ========================
+  // LOG SAVED CONFIG (JSON)
+  // ========================
+  {
+    String savedJson = "{";
+
+    savedJson += "\"node_id\":\"" + String(sysConfig.node_id) + "\",";
+    savedJson += "\"animal_id\":\"" + String(sysConfig.animal_id) + "\",";
+    savedJson += "\"ap_password\":\"" + String(sysConfig.ap_password) + "\",";
+    savedJson += "\"prox_low\":" + String(sysConfig.prox_active_low ? 1 : 0) + ",";
+    savedJson += "\"alarm_enabled\":" + String(sysConfig.alarm_enabled ? 1 : 0) + ",";
+    savedJson += "\"record_interval_sec\":" + String(sysConfig.record_interval_sec) + ",";
+    savedJson += "\"retention_days\":" + String(sysConfig.retention_days) + ",";
+    savedJson += "\"partition_hours\":" + String(sysConfig.partition_hours) + ",";
+    savedJson += "\"estrus_threshold_pct\":" + String(sysConfig.estrus_threshold_pct, 2) + ",";
+    savedJson += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? 1 : 0) + ",";
+    savedJson += "\"min_baseline_samples\":" + String(sysConfig.min_baseline_samples) + ",";
+    savedJson += "\"dirty_timeout_samples\":" + String(sysConfig.dirty_timeout_samples) + ",";
+    savedJson += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
+    savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold);
+
+    savedJson += "}";
+
+    logToFile("💾 [config] saved=" + savedJson);
+  }
 
   logToFile(
     "⚙️ CONFIG UPDATED");

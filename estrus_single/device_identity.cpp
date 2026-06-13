@@ -27,6 +27,5 @@ String generateDefaultNodeId() {
 
 // generate default WIFI AP Password
 String generateDefaultAPPassword() {
-
     return "estrus123";
 }

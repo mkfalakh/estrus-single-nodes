@@ -41,7 +41,7 @@ void logToFile(String msg) {
 // CONFIG
 // ========================
 #define LOG_QUEUE_SIZE 50
-#define LOG_LINE_SIZE 128
+#define LOG_LINE_SIZE 256
 #define LOG_BATCH_SIZE 5
 
 #define LOG_FLUSH_INTERVAL 3000
