@@ -1,3 +1,4 @@
+#include <stdint.h>
 #pragma once
 #include <Arduino.h>
 #include "estrus_model.h"
@@ -46,6 +47,10 @@ typedef struct {
   bool buzzer_active;
   bool alarm_ack;
   unsigned long last_alarm_ts;
+
+  // --- rtc ---
+  bool rtc_ever_synced;
+  int32_t rtc_drift_seconds;
 
 } SystemState;
 
