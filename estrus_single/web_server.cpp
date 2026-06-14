@@ -310,6 +310,11 @@ void handleHistory() {
 
   touchClient();
 
+  // LIMIT AMBIL DATA CSV DI APP/DASHBOARD
+  constexpr int DEFAULT_LIMIT = 10;
+  constexpr int MAX_LIMIT = 20;
+  constexpr int MAX_PAGE = 20;
+
   String date = server.arg("date");
 
   logToFile("📜 [history] request date=" + date);
@@ -327,7 +332,7 @@ void handleHistory() {
   }
 
   int page = 0;
-  int limit = 10;
+  int limit = DEFAULT_LIMIT;
 
   String filename = "/data/" + date + ".csv";
 
@@ -371,6 +376,11 @@ void handleHistory() {
     if (page < 0) {
       page = 0;
     }
+
+    page = constrain(
+      page,
+      0,
+      MAX_PAGE);
   }
 
   // LIMIT
@@ -378,14 +388,10 @@ void handleHistory() {
 
     long l = server.arg("limit").toInt();
 
-    l = constrain(l, 1L, 100L);
-
-    limit = (int)l;
-
-    // limit = constrain(
-    //   server.arg("limit").toInt(),
-    //   1,
-    //   100);
+    limit = constrain(
+      l,
+      1L,
+      (long)MAX_LIMIT);
   }
 
   // char lines[LIMIT][160]; // alternatif jika PSRAM tidak bisa
@@ -416,9 +422,9 @@ void handleHistory() {
     return;
   }
 
-  // int count = readLastLines(file, lines, LIMIT);
-
   bool hasNext = false;
+
+  taskYIELD();
 
   int count =
     readCsvPage(
@@ -432,7 +438,12 @@ void handleHistory() {
 
   logToFile("✅ [history] date=" + date + " page=" + String(page) + " limit=" + String(limit) + " count=" + String(count) + " hasNext=" + String(hasNext ? "true" : "false"));
 
-  String json = "{";
+  String json;
+
+  json.reserve(
+    256 + (count * 180));
+
+  json = "{";
 
   json += "\"date\":\"";
   json += date;
@@ -449,10 +460,23 @@ void handleHistory() {
 
   json += ",\"rows\":[";
 
+  // for (int i = 0; i < count; i++) {
+  //   json += csvRowToJson(lines[i]);
+
+  //   if (i < count - 1) json += ",";
+  // }
+
   for (int i = 0; i < count; i++) {
+
     json += csvRowToJson(lines[i]);
 
-    if (i < count - 1) json += ",";
+    if (i < count - 1) {
+      json += ",";
+    }
+
+    if ((i % 10) == 0) {
+      taskYIELD();
+    }
   }
 
   json += "],";
@@ -463,11 +487,11 @@ void handleHistory() {
 
   json += "}";
 
-  free(lines);
 
   server.sendHeader("Connection", "close");
-
   server.send(200, "application/json", json);
+
+  free(lines);
 }
 
 // ===== HANDLE BUZZER =====
