@@ -73,11 +73,16 @@ void setup() {
     FIRMWARE_VERSION,
     sysConfig.node_id,
     sysConfig.animal_id);
+
+
+  // run 1x to adjust time RTC | must setting first!
+  // adjustRTC();
 }
 
 void loop() {
 
-  handleWebServer();
+  // handleWebServer();
+
   cleanupSessions();
 
   // =========================
@@ -86,36 +91,38 @@ void loop() {
   static unsigned long lastDebug = 0;
   if (millis() - lastDebug > 60000) {
 
-    // logToFile(
+    // Serial.println(
     //   "LOGGER STACK: %u",
     //   uxTaskGetStackHighWaterMark(NULL));  // jika hasil < 500 = stack hampir habis
 
-    logToFile("=========  SYSTEM STATE  ==========");
+    Serial.println("=========  SYSTEM STATE  ==========");
 
-    logToFile("ERR: %d | SD: %d | RTC: %d | SENSOR: %d | ESTRUS: %d | BUZZ: %d",
-              sysIsError(), SYS.sd_ok, SYS.rtc_ok, SYS.sensor_ok, sysIsEstrus(), sysIsAlarm());
+    Serial.printf("ERR: %d | RTCSync: %d | SD: %d | RTC: %d | SENSOR: %d | ESTRUS: %d | BUZZ: %d",
+                  sysIsError(), SYS.rtc_ever_synced, SYS.sd_ok, SYS.rtc_ok, SYS.sensor_ok, sysIsEstrus(), sysIsAlarm());
 
-    logToFile("========== RAM & Storage ==========");
+    Serial.println("========== RAM & Storage ==========");
 
-    checkFreeSD();
+    // checkFreeSD();
 
-    logToFile("UsedHeap: %d | FreeHeap: %d | HeapSize: %d",
-              ESP.getHeapSize() - ESP.getFreeHeap(), ESP.getFreeHeap(), ESP.getHeapSize());
+    Serial.printf("UsedHeap: %d | FreeHeap: %d | HeapSize: %d",
+                  ESP.getHeapSize() - ESP.getFreeHeap(), ESP.getFreeHeap(), ESP.getHeapSize());
 
-    logToFile("UsedPSRAM: %d | FreePSRAM: %d | PSRAMSize: %d",
-              ESP.getPsramSize() - ESP.getFreePsram(), ESP.getFreePsram(), ESP.getPsramSize());
+    Serial.printf("UsedPSRAM: %d | FreePSRAM: %d | PSRAMSize: %d",
+                  ESP.getPsramSize() - ESP.getFreePsram(), ESP.getFreePsram(), ESP.getPsramSize());
 
-    // logToFile("===================================");
+    // Serial.println("===================================");
 
     lastDebug = millis();
   }
 
   if (pendingRestart && millis() > restartAt) {
 
-    logToFile("🔄 Restarting system after change device ID");
+    Serial.println("🔄 Restarting system after change device ID");
 
     delay(500);
 
     ESP.restart();
   }
+
+  yield();
 }
