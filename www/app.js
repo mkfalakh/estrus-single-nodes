@@ -1,544 +1,720 @@
-// =============================================
-// GLOBAL STATE
-// =============================================
+/* Refactored app.js — API_BASE aware and aligned with PRD final endpoints */
+const API_BASE = window.API_BASE || "";
+
+// State
 let latestData = null;
 let configCache = null;
+let currentPage = 0;
+let hasNextPage = false;
 
-// =============================================
-// ELEMENTS
-// =============================================
+// Elements
 const el = {
   nodeTitle: document.getElementById("nodeTitle"),
+  animalIdLabel: document.getElementById("animalIdLabel"),
+  rtcTimeHeader: document.getElementById("rtcTimeHeader"),
 
+  // estrus
+  partitionHours: document.getElementById("partitionHours"),
+  currentRate: document.getElementById("currentRate"),
+  baselineRate: document.getElementById("baselineRate"),
+  deviationPct: document.getElementById("deviationPct"),
+  estrusThreshold: document.getElementById("estrusThreshold"),
+  baselineSamples: document.getElementById("baselineSamples"),
+  baselineValid: document.getElementById("baselineValid"),
   estrusStatus: document.getElementById("estrusStatus"),
-  estrusScore: document.getElementById("estrusScore"),
 
+  // sensors
+  sensor1: document.getElementById("sensor1"),
+  sensor2: document.getElementById("sensor2"),
+  sensor1Dirty: document.getElementById("sensor1Dirty"),
+  sensor2Dirty: document.getElementById("sensor2Dirty"),
+
+  // rtc modules
+  rtcTime: document.getElementById("rtcTime"),
+  deviceTime: document.getElementById("deviceTime"),
+  rtcDrift: document.getElementById("rtcDrift"),
+  rtcSyncStatus: document.getElementById("rtcSyncStatus"),
+  rtcLostPower: document.getElementById("rtcLostPower"),
+  syncRtcBtn: document.getElementById("syncRtcBtn"),
+
+  // battery
   batteryPercent: document.getElementById("batteryPercent"),
+  batteryDays: document.getElementById("batteryDays"),
   batteryVoltage: document.getElementById("batteryVoltage"),
   batteryCurrent: document.getElementById("batteryCurrent"),
   batteryPower: document.getElementById("batteryPower"),
-  batteryDays: document.getElementById("batteryDays"),
-  batteryDate: document.getElementById("batteryDate"),
 
-  act1: document.getElementById("act1"),
-  act2: document.getElementById("act2"),
-  totalAct: document.getElementById("totalAct"),
-
-  rtcTime: document.getElementById("rtcTime"),
-
+  // status badges
   sdStatus: document.getElementById("sdStatus"),
   rtcStatus: document.getElementById("rtcStatus"),
   sensorStatus: document.getElementById("sensorStatus"),
   alarmStatus: document.getElementById("alarmStatus"),
+  wifiStatus: document.getElementById("wifiStatus"),
+  batteryStatus: document.getElementById("batteryStatus"),
 
+  // alarm
   alarmButton: document.getElementById("alarmButton"),
   ringAlarm: document.getElementById("ring"),
   iconAlarm: document.getElementById("icon-alarm"),
   textAlarm: document.getElementById("alarm-text"),
 
+  // config + history
   configForm: document.getElementById("configForm"),
   historyBody: document.getElementById("historyBody"),
+  historyPage: document.getElementById("historyPage"),
 };
 
-// =============================================
-// API
-// =============================================
-async function api(url, options = {}) {
+// API helpers
+async function api(path, options = {}) {
+  const separator = path.includes("?") ? "&" : "?";
+
+  const url = `${API_BASE}${path}${separator}_=${Date.now()}`;
+
   const res = await fetch(url, {
     credentials: "include",
+    cache: "no-store",
+    headers: {
+      Connection: "close",
+    },
     ...options,
   });
 
-  const text = await res.text();
-
-  console.log("RAW RESPONSE:", text);
-
-  let data = {};
-
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    console.error("JSON PARSE ERROR:", e);
-
-    console.error("INVALID JSON:", text);
-  }
-
-  if (!res.ok) {
-    throw new Error(data.error || "Request failed");
-  }
-
-  return data;
+  return res;
 }
 
-// =============================================
-// LOGIN CHECK
-// =============================================
+async function apiJson(path, options = {}) {
+  try {
+    const res = await api(path, options);
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      const msg = data?.error || `Request failed (${res.status})`;
+
+      throw new Error(msg);
+    }
+
+    return data;
+  } catch (err) {
+    // jangan spam console jika hanya timeout fetch
+    if (err.name === "AbortError") {
+      console.warn(`Request timeout: ${path}`);
+
+      return null;
+    }
+
+    throw err;
+  }
+}
+
+function showLogin() {
+  // for WebView and browser, redirect to login
+  window.location.href = `${API_BASE}/login.html`;
+}
+
+function showToast(msg, type = "info") {
+  const t = document.createElement("div");
+  t.className = `toast toast-${type}`;
+  t.style =
+    "position:fixed;left:50%;top:20px;transform:translateX(-50%);background:#111;color:#fff;padding:12px 16px;border-radius:8px;z-index:9999;opacity:0.95;font-size:16px;";
+  t.innerText = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+// Auth
 async function checkAuth() {
   try {
-    await api("/api/check");
-
+    await apiJson(`/api/check`);
     document.body.classList.add("auth-ok");
-
-    loadDashboard();
+    startDashboard();
   } catch (e) {
-    window.location.href = "/login.html";
+    showLogin();
   }
 }
 
-// =============================================
-// LOGOUT
-// =============================================
 async function logoutSession() {
   if (!confirm("Keluar dari dashboard?")) return;
-
   try {
-    await api("/api/logout", {
-      credentials: "include",
-    });
-    window.location.href = "/login.html";
+    await apiJson(`/api/logout`);
+    showLogin();
   } catch (e) {
     console.error(e);
+    showToast("Logout gagal", "error");
   }
 }
 
-// =============================================
-// LOAD DASHBOARD
-// =============================================
-async function loadDashboard() {
-  await Promise.all([loadLatest(), loadConfig(), loadBuzzerStatus()]);
+// sync RTC Button Handler
+async function syncRTC() {
+  try {
+    const epoch = Math.floor(Date.now() / 1000);
 
-  setInterval(loadLatest, 3000);
-  setInterval(loadBuzzerStatus, 2000);
+    const res = await apiJson("/api/rtc/sync", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        epoch,
+      }),
+    });
+
+    showToast("RTC berhasil disinkronkan", "success");
+
+    await loadRTC();
+  } catch (err) {
+    console.error(err);
+
+    showToast("Gagal sinkronisasi RTC", "error");
+  }
 }
 
-// =============================================
-// LOAD LATEST
-// =============================================
+// load RTC
+async function loadRTC() {
+  try {
+    const rtc = await apiJson("/api/rtc");
+
+    if (!rtc) {
+      return;
+    }
+
+    // =====================
+    // RTC NODE
+    // =====================
+
+    if (el.rtcTime) {
+      el.rtcTime.innerText = rtc.timestamp || "--";
+    }
+
+    // =====================
+    // DEVICE TIME
+    // =====================
+
+    const now = new Date();
+
+    const deviceEpoch = Math.floor(now.getTime() / 1000);
+
+    const deviceTime =
+      now.getFullYear() +
+      "-" +
+      String(now.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(now.getDate()).padStart(2, "0") +
+      " " +
+      String(now.getHours()).padStart(2, "0") +
+      ":" +
+      String(now.getMinutes()).padStart(2, "0") +
+      ":" +
+      String(now.getSeconds()).padStart(2, "0");
+
+    if (el.deviceTime) {
+      el.deviceTime.innerText = deviceTime;
+    }
+
+    // =====================
+    // LOST POWER
+    // =====================
+
+    if (el.rtcLostPower) {
+      el.rtcLostPower.innerText = rtc.lost_power ? "Ya" : "Tidak";
+    }
+
+    // =====================
+    // DRIFT
+    // =====================
+
+    const rtcEpoch = Number(rtc.epoch || 0);
+
+    const drift = Math.abs(deviceEpoch - rtcEpoch);
+
+    if (el.rtcDrift) {
+      if (rtcEpoch === 0) {
+        el.rtcDrift.innerText = "--";
+      } else {
+        el.rtcDrift.innerText = `${drift} detik`;
+      }
+    }
+
+    // =====================
+    // STATUS + BUTTON
+    // =====================
+
+    let status = "Belum Sinkron";
+
+    let disableButton = false;
+
+    if (rtc.lost_power) {
+      status = "RTC Lost Power";
+
+      disableButton = false;
+    } else if (!rtc.ever_synced) {
+      status = "Belum Sinkron";
+
+      disableButton = false;
+    } else if (drift <= 60) {
+      status = "Sinkron";
+
+      disableButton = true;
+    } else if (drift <= 60) {
+      status = `Selisih ${drift} detik`;
+
+      disableButton = false;
+    } else {
+      status = `Perlu Sinkronisasi`;
+
+      disableButton = false;
+    }
+
+    if (el.rtcSyncStatus) {
+      el.rtcSyncStatus.innerText = status;
+    }
+
+    if (el.syncRtcBtn) {
+      el.syncRtcBtn.disabled = disableButton;
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// DEVELOPMENT ONLY: Clear RTC data
+async function clearRTC() {
+  await apiJson("/api/rtc/clear", {
+    method: "POST",
+  });
+
+  showToast("RTC state cleared", "info");
+
+  await loadRTC();
+}
+
+// Start / Dashboard
+let dashboardInterval = null;
+let dashboardBusy = false;
+
+async function startDashboard() {
+  // hentikan polling lama
+  if (dashboardInterval) {
+    clearInterval(dashboardInterval);
+
+    dashboardInterval = null;
+
+    console.log("Dashboard interval restarted");
+  }
+
+  console.log("Dashboard started");
+
+  try {
+    await loadLatest();
+    await loadEstrus();
+    await loadConfig();
+    await loadRTC();
+  } catch (err) {
+    console.error(err);
+  }
+
+  dashboardInterval = setInterval(async () => {
+    if (dashboardBusy) {
+      return;
+    }
+
+    dashboardBusy = true;
+
+    try {
+      console.log("Dashboard polling");
+
+      await loadLatest();
+      await loadEstrus();
+      await loadRTC();
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        console.error(err);
+      }
+    } finally {
+      dashboardBusy = false;
+    }
+  }, 5000);
+}
+
+// LATEST
 async function loadLatest() {
   try {
-    const data = await api("/api/node/latest");
-
+    const data = await apiJson(`/api/node/latest`);
     latestData = data;
-
     renderLatest(data);
   } catch (e) {
     console.error(e);
   }
 }
 
-// =============================================
-// RENDER DASHBOARD
-// =============================================
 function renderLatest(data) {
   if (!data) return;
 
-  // =========================================
-  // NODE
-  // =========================================
-  if (el.nodeTitle) el.nodeTitle.innerText = data.node_id || "UNKNOWN NODE";
+  // node title already set by loadDevice, but keep fallback
+  if (el.nodeTitle)
+    el.nodeTitle.innerText = data.node_id || el.nodeTitle.innerText;
 
-  document.title = data.node_id || "Estrus Monitor";
+  if (el.animalIdLabel)
+    el.animalIdLabel.innerText = data.animal_id || el.animalIdLabel.innerText;
 
-  // =========================================
-  // RTC
-  // =========================================
-  if (el.rtcTime) el.rtcTime.innerText = data.time || "Gagal memuat waktu";
+  // rtc/time
+  const rtcEl = document.getElementById("rtcTimeHeader");
+  if (rtcEl) rtcEl.innerText = data.time || "Gagal memuat waktu";
 
-  // =========================================
-  // ESTRUS
-  // =========================================
-  if (el.estrusStatus) {
-    el.estrusStatus.innerText = data.estrus ? "ESTRUS" : "NORMAL";
+  // sensors
+  if (el.sensor1) el.sensor1.innerText = data.sensor1 ? "AKTIF" : "OFF";
+  if (el.sensor2) el.sensor2.innerText = data.sensor2 ? "AKTIF" : "OFF";
+  const s1dirty = data.sensor1_dirty;
+  if (el.sensor1Dirty) el.sensor1Dirty.innerText = s1dirty ? "KOTOR" : "NORMAL";
+  const s2dirty = data.sensor2_dirty;
+  if (el.sensor2Dirty) el.sensor2Dirty.innerText = s2dirty ? "KOTOR" : "NORMAL";
 
-    el.estrusStatus.className = data.estrus ? "status-estrus" : "status-normal";
-  }
-
-  if (el.estrusScore)
-    el.estrusScore.innerText = Number(data.score || 0).toFixed(2);
-
-  // =========================================
-  // ACTIVITY
-  // =========================================
-  if (el.act1) el.act1.innerText = data.a1 ?? 0;
-
-  if (el.act2) el.act2.innerText = data.a2 ?? 0;
-
-  if (el.totalAct) el.totalAct.innerText = data.total ?? 0;
-
-  // =========================================
-  // BATTERY
-  // =========================================
+  // battery
   if (el.batteryPercent)
     el.batteryPercent.innerText = `${Number(data.battery_percent || 0)} %`;
-
-  if (el.batteryVoltage)
-    el.batteryVoltage.innerText = `${Number(data.voltage || 0).toFixed(1)} V`;
-
-  if (el.batteryCurrent)
-    el.batteryCurrent.innerText = `${Number(data.current || 0).toFixed(1)} mA`;
-
-  if (el.batteryPower)
-    el.batteryPower.innerText = `${Number(data.power || 0).toFixed(1)} mW`;
-
   if (el.batteryDays)
     el.batteryDays.innerText = `${Number(data.battery_days || 0)}`;
+  if (el.batteryVoltage)
+    el.batteryVoltage.innerText = `${Number(data.voltage || 0).toFixed(2)} V`;
+  if (el.batteryCurrent)
+    el.batteryCurrent.innerText = `${Number(data.current || 0).toFixed(2)} mA`;
+  if (el.batteryPower)
+    el.batteryPower.innerText = `${Number(data.power || 0).toFixed(2)} mW`;
 
-  if (el.batteryDate) el.batteryDate.innerText = data.battery_date || "-";
-
-  // =========================================
-  // SYSTEM STATUS
-  // =========================================
+  // status badges
   updateBadge(el.sdStatus, data.sd);
   updateBadge(el.rtcStatus, data.rtc);
   updateBadge(el.sensorStatus, data.sensor);
+  updateBadge(el.wifiStatus, data.wifi);
+  updateBadge(el.alarmStatus, data.buzzer);
+  updateBadge(el.batteryStatus, !data.low_battery);
+
+  // alarm UI
+  if (el.alarmButton) {
+    if (data.buzzer) {
+      el.alarmButton.className = "alarm-btn alarm-active";
+      el.alarmButton.disabled = false;
+      if (el.ringAlarm) el.ringAlarm.style.display = "block";
+      if (el.textAlarm) el.textAlarm.innerText = "Status: Berbunyi";
+    } else {
+      el.alarmButton.className = "alarm-btn alarm-inactive";
+      el.alarmButton.disabled = true;
+      if (el.ringAlarm) el.ringAlarm.style.display = "none";
+      if (el.textAlarm) el.textAlarm.innerText = "Status: Dimatikan";
+    }
+  }
 }
 
-// =============================================
-// BADGE
-// =============================================
-function updateBadge(element, ok) {
-  if (!element) return;
+// ESTRUS
+async function loadEstrus() {
+  try {
+    const e = await apiJson(`/api/node/estrus`);
+    // console.log("ESTRUS:", e);
+    if (!e) return;
 
-  // element.innerText = ok ? "OK" : "ERROR";
+    if (e.valid === false) {
+      if (el.partitionHours) el.partitionHours.innerText = "--";
+      if (el.currentRate) el.currentRate.innerText = "--";
+      if (el.baselineRate) el.baselineRate.innerText = "--";
+      if (el.deviationPct) el.deviationPct.innerText = "--";
+      if (el.estrusThreshold) el.estrusThreshold.innerText = "--";
+      if (el.baselineSamples) el.baselineSamples.innerText = "--";
+      if (el.baselineValid) el.baselineValid.innerText = "Tidak Valid";
+      if (el.estrusStatus) {
+        el.estrusStatus.innerText = "INSUFFICIENT DATA";
+        el.estrusStatus.className = "status-normal";
+      }
+      return;
+    }
 
-  element.className = ok ? "dot dot-active" : "dot dot-error";
+    if (el.partitionHours)
+      el.partitionHours.innerText = `${e.partition || 0} Jam`;
+    if (el.currentRate)
+      el.currentRate.innerText = `${Number(e.current_rate || 0).toFixed(1)} %`;
+    if (el.baselineRate)
+      el.baselineRate.innerText = `${Number(e.baseline_rate || 0).toFixed(1)} %`;
+    if (el.deviationPct)
+      el.deviationPct.innerText = `${Number(e.deviation_pct || 0).toFixed(1)} %`;
+    if (el.estrusThreshold)
+      el.estrusThreshold.innerText = `${Number(e.threshold_pct || 0).toFixed(1)} %`;
+    if (el.baselineSamples)
+      el.baselineSamples.innerText = `${e.baseline_samples || 0} Sampel`;
+
+    if (el.baselineValid)
+      el.baselineValid.innerText = e.valid ? "Valid" : "Tidak Valid";
+    if (el.estrusStatus) {
+      el.estrusStatus.innerText = e.estrus ? "BIRAHI" : "NORMAL";
+      el.estrusStatus.className = e.estrus ? "status-estrus" : "status-normal";
+    }
+  } catch (err) {
+    console.error(err);
+  }
 }
 
-// =============================================
-// LOAD CONFIG
-// =============================================
+// CONFIG
 async function loadConfig() {
   try {
-    const cfg = await api("/api/config/get");
-
-    configCache = cfg;
-
-    fillConfigForm(cfg);
+    const cfg = await apiJson(`/api/config`);
+    configCache = cfg || {};
+    fillConfigForm(cfg || {});
   } catch (e) {
     console.error(e);
   }
 }
 
-// =============================================
-// FILL CONFIG
-// =============================================
 function fillConfigForm(cfg) {
   setValue("nodeId", cfg.node_id);
-
-  setValue("interval", cfg.interval);
+  setValue("animalId", cfg.animal_id);
+  // setValue("apPassword", cfg.ap_password);
   setValue("proxLow", cfg.prox_low ? 1 : 0);
+  setValue("alarmEnabled", cfg.alarm_enabled ? 1 : 0);
 
-  setValue("buzzer_enabled", cfg.buzzer_enabled ? 1 : 0);
-  if (cfg.buzzer_enabled) {
-    el.alarmStatus.className = "dot dot-active";
-  } else {
-    el.alarmStatus.className = "dot dot-inactive";
-  }
+  setValue("recordCfg", cfg.record_interval_sec);
+  setValue("retentionCfg", cfg.retention_days);
+  setValue("partitionCfg", cfg.partition_hours);
+  setValue("estrusCfg", cfg.estrus_threshold_pct);
+  setValue("stopAfterAlarm", cfg.stop_after_alarm ? 1 : 0);
+  setValue("baselineCfg", cfg.min_baseline_samples);
+  setValue("dirtyCfg", cfg.dirty_timeout_samples);
 
-  setValue("score", cfg.score);
-  setValue("ratioTrigger", cfg.ratio_trigger);
-  setValue("persist", cfg.persist);
-  setValue("ema", cfg.ema);
-  setValue("activityMin", cfg.activity_min);
-  setValue("balanceMin", cfg.balance_min);
-
-  console.log("CONFIG:", cfg);
+  setValue("currentThreshold", cfg.current_threshold);
+  setValue("powerThreshold", cfg.power_threshold);
 }
 
 function setValue(id, value) {
   const e = document.getElementById(id);
-
   if (!e) return;
-
-  // prevent undefined/null
   if (value === undefined || value === null) {
-    if (e.type === "number") {
-      e.value = 0;
-    } else {
-      e.value = "";
-    }
-
+    e.value = "";
     return;
   }
-
   e.value = value;
 }
 
-// function setChecked(id, value) {
-//   const e = document.getElementById(id);
-
-//   if (e) e.checked = !!value;
-// }
-
-// =============================================
 // VALIDATION
-// =============================================
 function showError(elm, msg) {
   elm.classList.add("invalid");
-
   let err = elm.parentElement.querySelector(".error-msg");
-
   if (!err) {
     err = document.createElement("div");
-
     err.className = "error-msg";
-
     elm.parentElement.appendChild(err);
   }
-
   err.innerText = msg;
 }
-
 function clearError(elm) {
   elm.classList.remove("invalid");
-
   const err = elm.parentElement.querySelector(".error-msg");
-
   if (err) err.remove();
 }
 
 function validateNodeId() {
   const elm = document.getElementById("nodeId");
-
-  const value = elm.value.trim();
-
-  const regex = /^[A-Z0-9-]{6,8}$/;
-
-  if (!regex.test(value)) {
-    showError(elm, "⚠️ 6-8 chars, A-Z 0-9 - only. cth: NODE-01");
-
+  if (!elm) return true;
+  const v = elm.value.trim();
+  const regex = /^[A-Z0-9-]{3,16}$/;
+  if (!regex.test(v)) {
+    showError(elm, "Invalid Node ID");
     return false;
   }
-
   clearError(elm);
-
+  return true;
+}
+function validateAnimalId() {
+  const elm = document.getElementById("animalId");
+  if (!elm) return true;
+  const v = elm.value.trim();
+  const regex = /^[A-Z0-9-]{3,16}$/;
+  if (!regex.test(v)) {
+    showError(elm, "Invalid Animal ID");
+    return false;
+  }
+  clearError(elm);
+  return true;
+}
+function validatePasswordAP() {
+  const elm = document.getElementById("apPassword");
+  if (!elm) return true;
+  const v = elm.value.trim();
+  if (v.length === 0) return true;
+  const regex = /^[a-zA-Z0-9-]{8,20}$/;
+  if (!regex.test(v)) {
+    showError(elm, "8-20 chars");
+    return false;
+  }
+  clearError(elm);
   return true;
 }
 
 function validateRange(id, min, max) {
   const elm = document.getElementById(id);
-
-  const value = parseFloat(elm.value);
-
-  if (isNaN(value)) {
+  if (!elm) return true;
+  const val = parseFloat(elm.value);
+  if (isNaN(val)) {
     showError(elm, "Invalid number");
-
     return false;
   }
-
-  if (value < min || value > max) {
-    showError(elm, `⚠️ Range ${min} - ${max}`);
-
+  if (val < min || val > max) {
+    showError(elm, `Range ${min}-${max}`);
     return false;
   }
-
   clearError(elm);
-
   return true;
 }
 
 function validateConfig() {
   let ok = true;
-
   ok &= validateNodeId();
-
-  ok &= validateRange("interval", 1, 24);
-  ok &= validateRange("score", 0.1, 5);
-  ok &= validateRange("ratioTrigger", 0.1, 10);
-  ok &= validateRange("persist", 1, 20);
-  ok &= validateRange("ema", 0.01, 1);
-  ok &= validateRange("activityMin", 1, 10000);
-  ok &= validateRange("balanceMin", 0.01, 1);
-
+  ok &= validateAnimalId();
+  // ok &= validatePasswordAP();
+  ok &= validateRange("recordInterval", 10, 3600);
+  ok &= validateRange("retentionDays", 1, 14);
+  const ph = parseInt(document.getElementById("partitionHours")?.value || 0);
+  if (Number.isInteger(ph) && 24 % ph !== 0) {
+    showError(document.getElementById("partitionHours"), "Must divide 24");
+    ok = false;
+  } else {
+    clearError(document.getElementById("partitionHours"));
+  }
+  ok &= validateRange("estrusThreshold", 0, 500);
+  ok &= validateRange("baselineSamples", 1, 10000);
+  ok &= validateRange("dirtySamples", 1, 10000);
+  ok &= validateRange("currentThreshold", 100, 150);
+  ok &= validateRange("powerThreshold", 400, 600);
   return !!ok;
 }
 
-// =============================================
 // SAVE CONFIG
-// =============================================
 async function saveConfig() {
   if (!validateConfig()) {
-    alert("Invalid configuration");
-
+    showToast("Invalid configuration", "error");
     return;
   }
-
   try {
     const params = new URLSearchParams();
+    // DEVICE
+    const nodeId = (document.getElementById("nodeId")?.value || "").trim();
+    const animalId = (document.getElementById("animalId")?.value || "").trim();
+    if (nodeId) params.append("node_id", nodeId);
+    if (animalId) params.append("animal_id", animalId);
+    // params.append(
+    //   "ap_password",
+    //   document.getElementById("apPassword")?.value || "",
+    // );
+    params.append("prox_low", document.getElementById("proxLow")?.value || 0);
+    params.append(
+      "alarm_enabled",
+      document.getElementById("alarmEnabled")?.value || 0,
+    );
+    // ESTRUS
+    params.append(
+      "record_interval_sec",
+      document.getElementById("recordInterval")?.value || 30,
+    );
+    params.append(
+      "retention_days",
+      document.getElementById("retentionDays")?.value || 3,
+    );
+    params.append(
+      "partition_hours",
+      document.getElementById("partitionHours")?.value || 3,
+    );
+    params.append(
+      "estrus_threshold_pct",
+      document.getElementById("estrusThreshold")?.value || 6,
+    );
+    params.append(
+      "stop_after_alarm",
+      document.getElementById("stopAfterAlarm")?.value || 0,
+    );
+    params.append(
+      "min_baseline_samples",
+      document.getElementById("baselineSamples")?.value || 10,
+    );
+    params.append(
+      "dirty_timeout_samples",
+      document.getElementById("dirtySamples")?.value || 240,
+    );
+    // BATTERY
+    params.append(
+      "current_threshold",
+      document.getElementById("currentThreshold")?.value || 120,
+    );
+    params.append(
+      "power_threshold",
+      document.getElementById("powerThreshold")?.value || 500,
+    );
 
-    // =========================
-    // NODE ID
-    // =========================
-    const nodeId = getValue("nodeId").trim();
-
-    if (nodeId !== configCache.node_id) {
-      params.append("node_id", nodeId);
-    }
-
-    // =========================
-    // BASIC
-    // =========================
-    params.append("interval", getValue("interval"));
-
-    params.append("buzzer_enabled", getValue("buzzer_enabled"));
-
-    params.append("prox_low", getValue("proxLow"));
-
-    // =========================
-    // MODEL
-    // =========================
-    params.append("score", getValue("score"));
-
-    params.append("ratio_trigger", getValue("ratioTrigger"));
-
-    params.append("persist", getValue("persist"));
-
-    params.append("ema", getValue("ema"));
-
-    params.append("activity_min", getValue("activityMin"));
-
-    params.append("balance_min", getValue("balanceMin"));
-
-    // =========================
-    // REQUEST
-    // =========================
-    const res = await fetch(`/api/config/set?${params}`, {
-      credentials: "include",
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert(data.error || "Gagal menyimpan konfigurasi");
-
+    const res = await apiJson("/api/config", { method: "POST", body: params });
+    if (res && res.success) {
+      showToast("Konfigurasi tersimpan", "success");
+      if (res.restart) {
+        alert("Perangkat akan restart karena perubahan konfigurasi.");
+      }
+      await loadConfig();
       return;
     }
-
-    // =========================
-    // UPDATE CACHE
-    // =========================
-    configCache = {
-      ...configCache,
-
-      node_id: nodeId,
-
-      interval: getValue("interval"),
-
-      buzzer_enabled: getValue("buzzer_enabled"),
-
-      prox_low: getValue("proxLow"),
-
-      score: getValue("score"),
-
-      ratio_trigger: getValue("ratioTrigger"),
-
-      persist: getValue("persist"),
-
-      ema: getValue("ema"),
-
-      activity_min: getValue("activityMin"),
-
-      balance_min: getValue("balanceMin"),
-    };
-
-    // =========================
-    // RESTART INFO
-    // =========================
-    if (data.restart) {
-      alert("Node ID berubah. Device restarting...");
-
-      return;
-    }
-
-    alert("Berhasil menyimpan konfigurasi!");
-
-    window.location.reload();
-  } catch (e) {
-    console.error(e);
-
-    alert("Gagal menyimpan konfigurasi");
+    showToast("Gagal menyimpan konfigurasi", "error");
+  } catch (err) {
+    console.error(err);
+    showToast("Gagal menyimpan konfigurasi", "error");
   }
 }
 
-// =============================================
-// RESET CONFIG
-// =============================================
-async function resetConfig() {
-  if (!confirm("Reset konfigurasi?")) return;
-
-  try {
-    await api("/api/config/reset");
-
-    alert("Reset berhasil!");
-
-    window.location.reload();
-  } catch (e) {
-    alert("Gagal mereset konfigurasi");
-  }
-}
-
-// =============================================
-// BUZZER STATUS BUTTON
-// =============================================
-async function loadBuzzerStatus() {
-  try {
-    const data = await api("/api/status/buzzer");
-    if (!el.alarmButton) return;
-
-    if (data.buzzer) {
-      el.alarmButton.className = "alarm-btn alarm-active";
-      el.alarmButton.disabled = false;
-      el.ringAlarm.style.display = "block";
-      el.textAlarm.innerText = "Status: Berbunyi";
-      el.iconAlarm.innerHTML =
-        '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path>';
-    } else {
-      el.alarmButton.className = "alarm-btn alarm-inactive";
-      el.alarmButton.disabled = true;
-      el.ringAlarm.style.display = "none";
-      el.textAlarm.innerText = "Status: Dimatikan";
-      el.iconAlarm.innerHTML =
-        '<path d="M13.73 21a2 2 0 0 1-3.46 0"></path><path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path><path d="M18 8a6 6 0 0 0-9.33-5"></path><line x1="1" y1="1" x2="23" y2="23"></line>';
-    }
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-// =============================================
-// STOP BUZZER
-// =============================================
+// BUZZER STOP
 async function stopBuzzer() {
   try {
-    await api("/api/buzzer/stop");
-
-    loadBuzzerStatus();
+    const r = await apiJson("/api/buzzer/stop", { method: "POST" });
+    showToast("Buzzer dihentikan", "success");
+    await loadLatest();
   } catch (e) {
     console.error(e);
+    showToast("Gagal menghentikan buzzer", "error");
   }
 }
 
-// =============================================
-// HISTORY
-// =============================================
-async function loadHistory(date) {
-  try {
-    const data = await api(`/api/node/history?date=${date}`);
+// HISTORY with pagination
+async function loadHistory(date, page = 0, limit = 20) {
+  console.log("loadHistory called!");
 
-    if (!data.rows || data.rows.length === 0) {
-      alert("Tidak ada data untuk tanggal tersebut");
+  if (!date) {
+    showToast("Pilih tanggal", "error");
+    return;
+  }
+  try {
+    const q = `?date=${encodeURIComponent(date)}&page=${page}&limit=${limit}`;
+    const data = await apiJson(`/api/node/history${q}`);
+    console.log("HISTORY:", data);
+
+    if (!data || !data.rows || data.rows.length === 0) {
+      showToast("Tidak ada data untuk tanggal tersebut", "info");
+      document.getElementById("historyBody").innerHTML = "";
+      el.historyPage && (el.historyPage.innerText = data.page || 0);
+      hasNextPage = !!data.has_next;
       return;
     }
-
     renderHistory(data.rows || []);
+    currentPage = Number(data.page ?? page);
+    hasNextPage = !!data.has_next;
+    el.historyPage && (el.historyPage.innerText = currentPage + 1);
   } catch (e) {
     console.error(e);
+    showToast("Gagal memuat history", "error");
   }
 }
+function nextHistory() {
+  if (!hasNextPage) return;
+  currentPage = (currentPage || 0) + 1;
+  const date = document.getElementById("historyDate")?.value;
+  loadHistory(date, currentPage);
+}
+function prevHistory() {
+  if ((currentPage || 0) === 0) return;
+  currentPage = (currentPage || 0) - 1;
+  const date = document.getElementById("historyDate")?.value;
+  loadHistory(date, currentPage);
+}
 
-// =============================================
-// RENDER HISTORY
-// =============================================
 function renderHistory(rows) {
   const tbody = document.getElementById("historyBody");
 
@@ -546,53 +722,55 @@ function renderHistory(rows) {
 
   tbody.innerHTML = "";
 
-  rows.forEach((row) => {
+  rows.forEach((r) => {
     const tr = document.createElement("tr");
 
     tr.innerHTML = `
-      <td>${row.device_id ?? "-"}</td>
-      <td>${row.animal_id ?? "-"}</td>
-      <td>${row.timestamp ?? "-"}</td>
-      <td>${row.sensor1_state ?? 0}</td>
-      <td>${row.sensor2_state ?? 0}</td>
-      <td>${row.deviation ?? 0}</td>
-      <td>${row.estrus ?? 0}</td>
+      <td>${r.device_id ?? "-"}</td>
+      <td>${r.animal_id ?? "-"}</td>
+      <td>${r.timestamp ?? "-"}</td>
+      <td>${r.sensor1_state ?? 0}</td>
+      <td>${r.sensor2_state ?? 0}</td>
+      <td>${r.sensor1_dirty ?? 0}</td>
+      <td>${r.sensor2_dirty ?? 0}</td>
+      <td>${Number(r.deviation ?? 0).toFixed(1)}</td>
+      <td>${r.estrus ? "YA" : "TIDAK"}</td>
+      <td>${Number(r.voltage ?? 0).toFixed(1)}</td>
+      <td>${Number(r.current ?? 0).toFixed(1)}</td>
+      <td>${Number(r.battery_pct ?? 0).toFixed(0)}%</td>
     `;
 
     tbody.appendChild(tr);
   });
 }
 
-// =============================================
-// DOWNLOAD CSV
-// =============================================
+// DOWNLOAD
 function downloadCSV(date) {
-  window.location.href = `/api/download?date=${date}`;
+  if (!date) {
+    showToast("Pilih tanggal", "error");
+    return;
+  }
+  window.location.href = `${API_BASE}/api/download?date=${encodeURIComponent(date)}`;
 }
 
-// =============================================
-// HELPERS
-// =============================================
-function getValue(id) {
-  return document.getElementById(id)?.value || "";
+// Helpers
+function updateBadge(element, ok) {
+  if (!element) return;
+  element.className = ok ? "dot dot-active" : "dot dot-error";
 }
-
-// function getChecked(id) {
-//   return document.getElementById(id)?.checked || false;
-// }
 
 function showRestartWarn() {
-  document.getElementById("restart-warn").style.display = "block";
+  const elw = document.getElementById("restart-warn");
+  if (elw) elw.style.display = "block";
 }
 
-// =============================================
-// AUTO VALIDATION
-// =============================================
-document.querySelectorAll("input").forEach((elm) => {
-  elm.addEventListener("input", validateConfig);
-});
+// Auto validation on inputs
+document
+  .querySelectorAll("input,select")
+  .forEach((i) => i.addEventListener("input", validateConfig));
 
-// =============================================
-// START
-// =============================================
-checkAuth(); // check login and load dashboard
+// Start
+document.addEventListener("DOMContentLoaded", () => {
+  // checkAuth();
+  startDashboard();
+});
