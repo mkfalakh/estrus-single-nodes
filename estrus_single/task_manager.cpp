@@ -8,6 +8,7 @@
 #include "wifi_task.h"
 #include "sens_proximity.h"
 #include "storage_cleanup.h"
+#include "web_server.h"
 
 TaskHandle_t sensorTaskHandle = NULL;
 TaskHandle_t csvTaskHandle = NULL;
@@ -16,6 +17,7 @@ TaskHandle_t ledTaskHandle = NULL;
 TaskHandle_t buzzerTaskHandle = NULL;
 TaskHandle_t buttonTaskHandle = NULL;
 TaskHandle_t wifiTaskHandle = NULL;
+TaskHandle_t webServerTaskHandle = NULL;
 TaskHandle_t cleanupStorageTaskHandle = NULL;
 
 TaskHandle_t watchdogTaskHandle = NULL;
@@ -94,7 +96,7 @@ void startTasks() {
     4096,
     NULL,
     1,
-    &buzzerTaskHandle,
+    &buttonTaskHandle,
     1);
 
   // =====================================
@@ -107,6 +109,18 @@ void startTasks() {
     NULL,
     1,
     &wifiTaskHandle,
+    0);
+
+  // =====================================
+  // WEB SERVER
+  // =====================================
+  xTaskCreatePinnedToCore(
+    webServerTask,
+    "WEB",
+    8192,
+    nullptr,
+    2,
+    &webServerTaskHandle,
     0);
 
   // =====================================
