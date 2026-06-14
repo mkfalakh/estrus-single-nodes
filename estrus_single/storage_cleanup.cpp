@@ -159,7 +159,7 @@ void cleanupStorageTask(void *pv) {
 
     DateTime now = getNow();
 
-    if (firstRun || (now.day() != lastCleanupDay && now.hour() == 0 && now.minute() < 5)) {
+    if (firstRun || (now.day() != lastCleanupDay && now.hour() == 0 && now.minute() < 1)) {
 
       firstRun = false;
 
@@ -169,7 +169,7 @@ void cleanupStorageTask(void *pv) {
 
         cleanupFolder("/data");
 
-        cleanupFolder("/logs");
+        cleanupFolder("/log");
 
         xSemaphoreGive(
           sdMutex);
