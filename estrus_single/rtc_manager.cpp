@@ -2,17 +2,47 @@
 #include "system_state.h"
 #include "logger.h"
 #include "config_runtime.h"
+#include <Preferences.h>
 
-#define TZ_OFFSET 7 * 3600
+#define RTC_SYNC_KEY "rtc_sync"
+
 RTC_DS3231 rtc;
 
+// simpan status sinkron rtc ke nvs
+void saveRTCSyncState(bool synced) {
+
+  Preferences prefs;
+
+  if (!prefs.begin("sapi", false)) {
+    return;
+  }
+
+  prefs.putBool(RTC_SYNC_KEY, synced);
+
+  prefs.end();
+}
+
+// load status sinkron rtc
+bool loadRTCSyncState() {
+
+  Preferences prefs;
+
+  if (!prefs.begin("sapi", true)) {
+    return false;
+  }
+
+  bool synced =
+    prefs.getBool(RTC_SYNC_KEY, false);
+
+  prefs.end();
+
+  return synced;
+}
+
+
 DateTime getNow() {
-  // return rtc.now();
 
-  DateTime utc = rtc.now();
-
-  return DateTime(
-    utc.unixtime() + TZ_OFFSET);
+  return rtc.now();
 }
 
 String nowStr() {
@@ -32,24 +62,87 @@ String todayDateStr() {
   return String(buf);
 }
 
+
 bool initRTC() {
+
   if (!rtc.begin()) {
-    Serial.println("❌ RTC init gagal!");
+
+    logToFile("❌ RTC init gagal");
+
     sysSetRTC(false);
+
     return false;
   }
 
+  SYS.rtc_ever_synced =
+    loadRTCSyncState();
+
   if (rtc.lostPower()) {
-    Serial.println("RTC lost power, let's set the time!");
-    // When time needs to be set on a new device, or after a power loss, the
-    // following line sets the RTC to the date & time this sketch was compiled
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    // This line sets the RTC with an explicit date & time, for example to set
-    // January 21, 2014 at 3am you would call:
-    //rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+
+    logToFile(
+      "⚠ RTC lost power");
+
+    SYS.rtc_ever_synced = false;
+
+    saveRTCSyncState(false);
+
+    sysSetRTC(false);
+
+    return false;
   }
 
-  Serial.println("✅ RTC OK");
   sysSetRTC(true);
+
+  logToFile(
+    "✅ RTC OK");
+
   return true;
+}
+
+
+// adjust rtc time manually | run 1x in Setup()
+void adjustRTC() {
+
+  DateTime now = rtc.now();
+
+  // set your local time here | year, month, day, hour, minute, second
+  rtc.adjust(
+    DateTime(2026, 6, 14, 10, 0, 0));
+
+  Serial.printf(
+    "RTC: %04d-%02d-%02d %02d:%02d:%02d\n",
+    now.year(),
+    now.month(),
+    now.day(),
+    now.hour(),
+    now.minute(),
+    now.second());
+
+  Serial.printf(
+    "Lost Power: %d\n",
+    rtc.lostPower());
+}
+
+
+// reset rtc time to 2000-01-01 01:01:01 | DEVELOPMENT ONLY
+void resetRTC() {
+
+  DateTime now = rtc.now();
+
+  // set your local time here | year, month, day, hour, minute, second
+  rtc.adjust(
+    DateTime(2000, 1, 1, 1, 1, 1));
+
+  Serial.printf(
+    "RTC: %04d-%02d-%02d %02d:%02d:%02d\n",
+    now.year(),
+    now.month(),
+    now.day(),
+    now.hour(),
+    now.minute(),
+    now.second());
+
+  Serial.printf(
+    "Lost Power: %d\n",
+    rtc.lostPower());
 }
