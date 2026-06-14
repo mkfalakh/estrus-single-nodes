@@ -7,3 +7,9 @@ bool initRTC();
 DateTime getNow();
 String todayDateStr(); // "YYYY-MM-DD"
 String nowStr(); // "YYYY-MM-DD HH:MM:SS"
+
+void adjustRTC(); // adjust RTC on first boot
+void resetRTC(); // reset rtc | DEVELOPMENT ONLY
+
+void saveRTCSyncState(bool synced);
+bool loadRTCSyncState();

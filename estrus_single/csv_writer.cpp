@@ -22,16 +22,9 @@ QueueHandle_t sensorQueue;
 // ========================
 // Helper
 // ========================
-String getCSVPath() {
+static String getCsvPath() {
 
-  String path = "/data/";
-
-  // path += sysConfig.node_id;
-  path += "-";
-  path += todayDateStr();
-  path += ".csv";
-
-  return path;
+  return "/data/" + todayDateStr() + ".csv";
 }
 
 static void writeHeaderIfNeeded(File &f) {
@@ -77,10 +70,12 @@ static bool flushCsvBuffer(
   bool success = false;
 
   File f = SD.open(
-    getCSVPath(),
+    getCsvPath(),
     FILE_APPEND);
 
   if (f) {
+
+    String filename = getCsvPath();
 
     writeHeaderIfNeeded(f);
 
@@ -113,6 +108,9 @@ static bool flushCsvBuffer(
 
     f.close();
 
+    // update metadata sdcard
+    // updateFileTimestamp(filename.c_str());
+
     success = true;
 
   } else {
@@ -121,7 +119,7 @@ static bool flushCsvBuffer(
 
     logToFile(
       "❌ CSV open failed: %s",
-      getCSVPath().c_str());
+      getCsvPath().c_str());
 
     return false;
   }
@@ -203,6 +201,18 @@ void csvWriterTask(void *pv) {
   static uint8_t lastDay = 0;
 
   while (true) {
+
+    // skip write csv if RTC invalid/broken
+    if (!SYS.rtc_ok) {
+
+      logToFile(
+        "⚠ CSV skipped: RTC invalid");
+
+      vTaskDelay(
+        pdMS_TO_TICKS(60000));
+
+      continue;
+    }
 
     DateTime now = getNow();
 

@@ -18,7 +18,7 @@ bool initSDCard() {
     sysSetSD(false);
     return false;
   }
-  
+
   if (!SD.exists("/log")) SD.mkdir("/log");
 
   Serial.println("✅ SDCard OK");
@@ -73,14 +73,7 @@ static String safeNowStr() {
 
 static String getLogPath() {
 
-  String path = "/logs/";
-
-  path += sysConfig.node_id;
-  path += "-";
-  path += todayDateStr();
-  path += ".log";
-
-  return path;
+  return "/log/" + todayDateStr() + ".log";
 }
 
 // ========================
@@ -192,11 +185,16 @@ void loggerTask(void *pv) {
 
           if (f) {
 
+            String filename = getLogPath();
+
             for (int i = 0; i < count; i++) {
               f.println(buffer[i].text);
             }
 
             f.close();
+
+            // update metadata sdcard
+            // updateFileTimestamp(filename.c_str());
           }
         }
 
@@ -217,11 +215,16 @@ void loggerTask(void *pv) {
 
         if (f) {
 
+          String filename = getLogPath();
+
           for (int i = 0; i < count; i++) {
             f.println(buffer[i].text);
           }
 
           f.close();
+
+          // update metadata sdcard
+          // updateFileTimestamp(filename.c_str());
         }
 
         count = 0;

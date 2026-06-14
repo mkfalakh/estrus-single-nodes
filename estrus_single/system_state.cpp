@@ -27,7 +27,10 @@ SystemState SYS = {
 
   .buzzer_active = false,
   .alarm_ack = false,
-  .last_alarm_ts = 0
+  .last_alarm_ts = 0,
+
+  .rtc_ever_synced = false,
+  .rtc_drift_seconds = 0
 };
 
 static bool lastEstrus = false;

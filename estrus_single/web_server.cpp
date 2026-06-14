@@ -1,3 +1,4 @@
+#include "http_parser.h"
 #include "web_server.h"
 #include "auth.h"
 #include "crypto.h"
@@ -18,7 +19,14 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+#define TZ_OFFSET (7 * 3600)  // timezone GMT+7 WIB
+
 WebServer server(80);
+
+// update last client
+inline void touchClient() {
+  lastClientTime = millis();
+}
 
 String jsonEscape(const String& s) {
 
@@ -110,8 +118,8 @@ static const int CSV_COLUMN_COUNT = sizeof(CSV_COLUMNS) / sizeof(CSV_COLUMNS[0])
 // fields yang ditulis sebagai string di JSON (sisanya angka/bool, tanpa quote)
 static bool isCsvStringField(const char* col) {
   return strcmp(col, "device_id") == 0
-    || strcmp(col, "animal_id") == 0
-    || strcmp(col, "timestamp") == 0;
+         || strcmp(col, "animal_id") == 0
+         || strcmp(col, "timestamp") == 0;
 }
 
 // ubah satu baris CSV ("a,b,c,...") menjadi objek JSON {"device_id":"a",...}
@@ -300,6 +308,8 @@ void handleHistory() {
   //   return;
   // }
 
+  touchClient();
+
   String date = server.arg("date");
 
   logToFile("📜 [history] request date=" + date);
@@ -319,7 +329,9 @@ void handleHistory() {
   int page = 0;
   int limit = 10;
 
-  String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
+  String filename = "/data/" + date + ".csv";
+
+  // String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
 
   if (!SD.exists(filename)) {
 
@@ -453,6 +465,8 @@ void handleHistory() {
 
   free(lines);
 
+  server.sendHeader("Connection", "close");
+
   server.send(200, "application/json", json);
 }
 
@@ -515,7 +529,9 @@ void handleDownload() {
   }
 
   String date = server.arg("date");
-  String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
+  String filename = "/data/" + date + ".csv";
+
+  // String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
 
   File file = SD.open(filename);
   if (!file) {
@@ -646,13 +662,13 @@ void handleSetConfig() {
   }
 
   // helper: cek key ada di JSON body
-  auto hasField = [&](const char *key) {
+  auto hasField = [&](const char* key) {
     return doc.containsKey(key);
   };
 
   // helper: ambil value sebagai String
-  auto fieldStr = [&](const char *key) {
-    return String((const char *)doc[key]);
+  auto fieldStr = [&](const char* key) {
+    return String((const char*)doc[key]);
   };
 
   // ========================
@@ -1067,7 +1083,7 @@ void handleSetConfig() {
 
   // estrus threshold berubah
   if (estrusThresholdChanged) {
-    
+
     logToFile(
       "📈 Estrus threshold updated: %.1f%%",
       sysConfig.estrus_threshold_pct);
@@ -1209,6 +1225,8 @@ void handleLatest() {
   //   return;
   // }
 
+  touchClient();
+
   String json = "{";
 
   json += "\"node_id\":\"" + String(sysConfig.node_id) + "\",";
@@ -1258,6 +1276,8 @@ void handleLatest() {
 
   json += "}";
 
+  server.sendHeader("Connection", "close");
+
   server.send(200, "application/json", json);
 }
 
@@ -1267,6 +1287,8 @@ void handleEstrus() {
   //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
   //   return;
   // }
+
+  touchClient();
 
   String json = "{";
 
@@ -1302,6 +1324,8 @@ void handleEstrus() {
   json += String(SYS.baseline_samples >= sysConfig.min_baseline_samples);
 
   json += "}";
+
+  server.sendHeader("Connection", "close");
 
   server.send(
     200,
@@ -1367,6 +1391,8 @@ void handleStorage() {
       sensorQueue));
 
   json += "}";
+
+  server.sendHeader("Connection", "close");
 
   server.send(
     200,
@@ -1482,6 +1508,112 @@ void handleDevice() {
     json);
 }
 
+// POST RTC
+void handleRTCSync() {
+
+  StaticJsonDocument<128> doc;
+
+  if (deserializeJson(
+        doc,
+        server.arg("plain"))) {
+
+    server.send(
+      400,
+      "application/json",
+      "{\"error\":\"invalid json\"}");
+
+    return;
+  }
+
+  uint32_t epoch =
+    doc["epoch"] | 0;
+
+  if (epoch == 0) {
+
+    server.send(
+      400,
+      "application/json",
+      "{\"error\":\"invalid epoch\"}");
+
+    return;
+  }
+
+  epoch += (7UL * 3600UL);
+
+  rtc.adjust(
+    DateTime(epoch));
+
+  SYS.rtc_ever_synced = true;
+
+  saveRTCSyncState(true);
+
+  sysSetRTC(true);  // lanjut write data csv setelah rtc sinkron
+
+  logToFile(
+    "🕒 RTC synced! -> CSV write continues!");
+
+  server.send(
+    200,
+    "application/json",
+    "{\"success\":true}");
+}
+
+// GET RTC
+void handleRTC() {
+
+  DateTime now =
+    getNow();
+
+  String json = "{";
+
+  json += "\"timestamp\":\"";
+  json += nowStr();
+  json += "\",";
+
+  json += "\"epoch\":";
+  json += String(
+    now.unixtime() - (7UL * 3600UL));
+  json += ",";
+
+  json += "\"lost_power\":";
+  json += rtc.lostPower()
+            ? "true"
+            : "false";
+  json += ",";
+
+  json += "\"ever_synced\":";
+  json += SYS.rtc_ever_synced
+            ? "true"
+            : "false";
+
+  json += "}";
+
+  server.send(
+    200,
+    "application/json",
+    json);
+}
+
+// DEVELOPMENT ONLY | RESET TIME & STATE RTC
+void handleRTCClear() {
+
+  resetRTC();  // reset time
+
+  SYS.rtc_ever_synced = false;
+
+  saveRTCSyncState(false);
+
+  sysSetRTC(false);
+
+  logToFile(
+    "🧪 RTC time & sync state cleared");
+
+  server.send(
+    200,
+    "application/json",
+    "{\"success\":true}");
+}
+
 
 // ===== LOG REQUEST =====
 static void logRequest() {
@@ -1502,7 +1634,10 @@ static void logRequest() {
 
 // shortcut: register route + auto-log request
 #define ROUTE(uri, method, handler) \
-  server.on(uri, method, []() { logRequest(); handler(); })
+  server.on(uri, method, []() { \
+    logRequest(); \
+    handler(); \
+  })
 
 // ===== INIT WEBSERVER =====
 void initWebServer() {
@@ -1527,6 +1662,12 @@ void initWebServer() {
   ROUTE("/api/node/history", HTTP_GET, handleHistory);  // untuk melihat data csv
   ROUTE("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
   ROUTE("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
+
+  // RTC | WAKTU DEVICE
+  ROUTE("/api/rtc/sync", HTTP_POST, handleRTCSync);  // untuk sinkronisasi waktu RTC
+  ROUTE("/api/rtc", HTTP_GET, handleRTC);            // untuk baca waktu RTC
+
+  ROUTE("/api/rtc/clear", HTTP_POST, handleRTCClear);  // DEVELOPMENT ONLY | RESET TIME & STATE RTC
 
   // CONFIG
   ROUTE("/api/config", HTTP_GET, handleGetConfig);          // untuk load config dari esp
@@ -1557,6 +1698,17 @@ void initWebServer() {
   logToFile("✅ WebServer Ready");
 }
 
-void handleWebServer() {
-  server.handleClient();
+// diganti jadi task sendiri
+void webServerTask(void* pv) {
+
+  while (true) {
+
+    server.handleClient();
+
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
 }
+
+// void handleWebServer() {
+//   server.handleClient();
+// }

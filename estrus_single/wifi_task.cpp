@@ -3,7 +3,7 @@
 #include "logger.h"
 #include "system_state.h"
 
-#define WIFI_TIMEOUT_MS 600000UL // 10 menit
+#define WIFI_TIMEOUT_MS 600000UL  // 10 menit
 
 void wifiTask(void *pv) {
 
@@ -17,15 +17,16 @@ void wifiTask(void *pv) {
       if (idleTime >= WIFI_TIMEOUT_MS) {
 
         logToFile(
-          "📴 WiFi timeout -> OFF"
-        );
+          "WiFi idle=%lu timeout=%lu enabled=%d",
+          idleTime,
+          WIFI_TIMEOUT_MS,
+          wifiEnabled);
 
         disableWiFiAP();
       }
     }
 
     vTaskDelay(
-      5000 / portTICK_PERIOD_MS
-    );
+      5000 / portTICK_PERIOD_MS);
   }
 }
