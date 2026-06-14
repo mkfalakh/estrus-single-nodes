@@ -69,6 +69,10 @@ void watchdogTask(void* pv) {
       "wifiTask",
       wifiTaskHandle);
 
+      printTask(
+      "webServerTask",
+      webServerTaskHandle);
+
     printTask(
       "Cleanup",
       cleanupStorageTaskHandle);
