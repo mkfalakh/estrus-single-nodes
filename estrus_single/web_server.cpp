@@ -666,7 +666,7 @@ void handleSetConfig() {
 
   logToFile("📝 [config] POST /api/config body=" + body);
 
-  DynamicJsonDocument doc(768);
+  DynamicJsonDocument doc(1536);
 
   if (body.length() > 0) {
 

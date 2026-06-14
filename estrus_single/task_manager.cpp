@@ -112,7 +112,7 @@ void startTasks() {
     0);
 
   // =====================================
-  // WEB SERVER
+  // WEB SERVER — core 1, biar IDLE0 tidak starve saat handleHistory SD read
   // =====================================
   xTaskCreatePinnedToCore(
     webServerTask,
@@ -121,7 +121,7 @@ void startTasks() {
     nullptr,
     2,
     &webServerTaskHandle,
-    0);
+    1);
 
   // =====================================
   // CLEANUP STORAGE
