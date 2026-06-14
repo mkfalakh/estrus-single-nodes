@@ -106,9 +106,13 @@ int readCsvPage(File &file,
       }
     }
 
-    // cegah watchdog
-    if ((pos % 512) == 0) {
-      yield();
+    static uint16_t watchdogCounter = 0;
+
+    if (++watchdogCounter >= 256) {
+
+      watchdogCounter = 0;
+
+      vTaskDelay(pdMS_TO_TICKS(1));
     }
   }
 
