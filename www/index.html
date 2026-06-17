@@ -239,7 +239,7 @@
             <button
               id="alarmButton"
               class="alarm-btn alarm-inactive"
-              onclick="stopBuzzer()"
+              onclick="stopAlarm()"
             >
               <svg
                 id="icon-alarm"
@@ -260,7 +260,7 @@
         <!-- RTC Info Card -->
         <div class="card">
           <div class="card-header">
-            <span>Informasi RTC</span>
+            <span>Informasi Waktu</span>
             <svg
               width="16"
               height="16"
@@ -303,16 +303,16 @@
             style="display: flex; justify-content: flex-end; margin-top: 8px"
           >
             <button id="syncRtcBtn" class="btn btn-outline" onclick="syncRTC()">
-              Sync RTC
+              Sinkronkan Waktu
             </button>
 
-            <button
+            <!-- <button
               id="clearRtcBtn"
               class="btn btn-primary"
               onclick="clearRTC()"
             >
               Clear RTC
-            </button>
+            </button> -->
           </div>
         </div>
       </div>
@@ -432,7 +432,7 @@
                   required
                 />
                 <div id="restart-warn" class="warning-box">
-                  ⚠️ ID atau AP Password berubah — perangkat akan restart!
+                  ⚠️ Jika ID berubah — perangkat akan restart!
                 </div>
               </div>
 
@@ -442,15 +442,20 @@
                   type="text"
                   id="animalId"
                   placeholder="cth. SAPI-01"
-                  onchange="showRestartWarn()"
                   required
                 />
               </div>
 
-              <!-- <div class="form-group">
+              <div class="form-group">
                 <label>AP Password</label>
-                <input type="text" id="apPassword" placeholder="8-20 chars" onchange="showRestartWarn()" />
-              </div> -->
+                <input
+                  type="text"
+                  id="apPassword"
+                  placeholder="8-20 chars"
+                  onchange="showRestartWarn()"
+                  readonly
+                />
+              </div>
 
               <!-- SENSOR -->
               <div class="form-group full-width" style="margin-top: 8px">
@@ -593,7 +598,11 @@
               </div>
 
               <div class="form-group full-width">
-                <button type="submit" class="btn btn-primary full-width">
+                <button
+                  id="saveConfigBtn"
+                  type="submit"
+                  class="btn btn-primary full-width"
+                >
                   Simpan Konfigurasi
                 </button>
               </div>
