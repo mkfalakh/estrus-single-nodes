@@ -1,6 +1,7 @@
 #include "storage_cleanup.h"
 #include "config_runtime.h"
 #include "rtc_manager.h"
+#include "sd_manager.h"
 #include "system_state.h"
 #include "logger.h"
 #include "csv_writer.h"
@@ -8,14 +9,14 @@
 #include <SD.h>
 
 // HELPER
-static bool isOlderThanRetention(
-  const DateTime &fileDate) {
+bool isOlderThanRetention(const DateTime &fileDate) {
 
   DateTime now = getNow();
 
-  uint32_t ageDays = (now.unixtime() - fileDate.unixtime()) / 86400UL;
+  int ageDays =
+    (now.unixtime() - fileDate.unixtime()) / 86400;
 
-  return (ageDays > sysConfig.retention_days);
+  return ageDays >= sysConfig.retention_days;
 }
 
 static bool parseDateFromFilename(
@@ -65,82 +66,84 @@ static bool parseDateFromFilename(
   return true;
 }
 
-// PROSES CLEANUP FOLDER
-static void cleanupFolder(
-  const char *path) {
 
-  File dir =
-    SD.open(path);
+// PROSES CLEANUP FOLDER
+static void cleanupFolder(const char *path) {
+
+  File dir = SD.open(path);
 
   if (!dir) {
     sysSetSD(false);
+
+    giveSDMutex();
+
     return;
   }
 
   sysSetSD(true);
 
+  constexpr int MAX_DELETE = 64;
+
+  String filesToDelete[MAX_DELETE];
+  int deleteCount = 0;
+
   File file;
 
-  while (
-    (file = dir.openNextFile())) {
+  while ((file = dir.openNextFile())) {
 
     if (file.isDirectory()) {
 
       file.close();
-
       continue;
     }
 
-    String name =
-      file.name();
+    String name = file.name();
 
     DateTime fileDate;
 
-    if (
+    if (parseDateFromFilename(name, fileDate) && isOlderThanRetention(fileDate)) {
 
-      parseDateFromFilename(
-        name,
-        fileDate)
-
-      &&
-
-      isOlderThanRetention(
-        fileDate)) {
-
-      String fullPath =
-        String(file.name());
+      String fullPath = String(file.name());
 
       if (!fullPath.startsWith("/")) {
 
         fullPath =
-          String(path)
-          + "/"
-          + fullPath;
+          String(path) + "/" + fullPath;
       }
 
-      file.close();
+      if (deleteCount < MAX_DELETE) {
 
-      if (SD.remove(fullPath)) {
-
-        logToFile(
-          "🗑 Deleted: %s",
-          fullPath.c_str());
-
-      } else {
-
-        logToFile(
-          "⚠️ Failed delete: %s",
-          fullPath.c_str());
+        filesToDelete[deleteCount++] =
+          fullPath;
       }
-
-    } else {
-
-      file.close();
     }
+
+    file.close();
+
+    taskYIELD();
   }
 
   dir.close();
+
+  for (int i = 0; i < deleteCount; i++) {
+
+    if (SD.remove(filesToDelete[i])) {
+
+      logToFile(
+        "🗑 Deleted: %s",
+        filesToDelete[i].c_str());
+
+    } else {
+
+      logToFile(
+        "⚠️ Failed delete: %s",
+        filesToDelete[i].c_str());
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
 }
+
 
 // TASK
 void cleanupStorageTask(void *pv) {
@@ -150,36 +153,46 @@ void cleanupStorageTask(void *pv) {
 
   while (true) {
 
-    if (!SYS.rtc_ok) {
+    // RTC belum valid → tunggu
+    if (!SYS.rtc_ok || !SYS.sd_ok) {
 
-      vTaskDelay(pdMS_TO_TICKS(60000));
+      Serial.println("⚠️ Cleanup Storage paused: RTC invalid or SD invalid");
+
+        vTaskDelay(pdMS_TO_TICKS(30000));
 
       continue;
     }
 
     DateTime now = getNow();
 
-    if (firstRun || (now.day() != lastCleanupDay && now.hour() == 0 && now.minute() < 1)) {
+    bool needCleanup =
+      firstRun || (now.day() != lastCleanupDay && now.hour() == 0 && now.minute() == 0);
+
+    if (needCleanup) {
 
       firstRun = false;
-
       lastCleanupDay = now.day();
 
-      if (sdMutex && xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000))) {
+      if (takeSDMutex("CLEANUP", pdMS_TO_TICKS(5000))) {
+
+        logToFile(
+          "🧹 Starting storage cleanup...");
 
         cleanupFolder("/data");
-
         cleanupFolder("/log");
 
-        xSemaphoreGive(
-          sdMutex);
+        giveSDMutex();
 
         logToFile(
           "🧹 Storage cleanup done");
+      } else {
+
+        logToFile(
+          "⚠️ Cleanup skipped: SD busy");
       }
     }
 
-    vTaskDelay(
-      pdMS_TO_TICKS(60000));
+    // cek setiap 1 menit
+    vTaskDelay(pdMS_TO_TICKS(60000));
   }
 }
