@@ -112,11 +112,12 @@ function showLogin() {
   window.location.href = `${API_BASE}/login.html`;
 }
 
+// showToast
 function showToast(msg, type = "info") {
   const t = document.createElement("div");
   t.className = `toast toast-${type}`;
   t.style =
-    "position:fixed;left:50%;top:20px;transform:translateX(-50%);background:#111;color:#fff;padding:12px 16px;border-radius:8px;z-index:9999;opacity:0.95;font-size:16px;";
+    "position:fixed;left:50%;top:20px;transform:translateX(-50%);background:#111;color:#fff;padding:12px 16px;border-radius:8px;z-index:9999;opacity:0.95;font-size:30px;";
   t.innerText = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 4000);
@@ -159,11 +160,21 @@ async function syncRTC() {
       }),
     });
 
+    if (el.syncRtcBtn) {
+      el.syncRtcBtn.disabled = true;
+      el.syncRtcBtn.innerText = "Menyinkronkan...";
+    }
+
     showToast("RTC berhasil disinkronkan", "success");
 
     await loadRTC();
   } catch (err) {
     console.error(err);
+
+    if (el.syncRtcBtn) {
+      el.syncRtcBtn.disabled = false;
+      el.syncRtcBtn.innerText = "Sinkronkan RTC";
+    }
 
     showToast("Gagal sinkronisasi RTC", "error");
   }
@@ -247,22 +258,27 @@ async function loadRTC() {
       status = "RTC Lost Power";
 
       disableButton = false;
+      el.syncRtcBtn.style.display = "block";
     } else if (!rtc.ever_synced) {
       status = "Belum Sinkron";
 
       disableButton = false;
+      el.syncRtcBtn.style.display = "block";
     } else if (drift <= 60) {
       status = "Sinkron";
 
       disableButton = true;
+      el.syncRtcBtn.style.display = "none";
     } else if (drift <= 60) {
       status = `Selisih ${drift} detik`;
 
       disableButton = false;
+      el.syncRtcBtn.style.display = "block";
     } else {
       status = `Perlu Sinkronisasi`;
 
       disableButton = false;
+      el.syncRtcBtn.style.display = "block";
     }
 
     if (el.rtcSyncStatus) {
@@ -465,7 +481,7 @@ async function loadConfig() {
 function fillConfigForm(cfg) {
   setValue("nodeId", cfg.node_id);
   setValue("animalId", cfg.animal_id);
-  // setValue("apPassword", cfg.ap_password);
+  setValue("apPassword", cfg.ap_password);
   setValue("proxLow", cfg.prox_low ? 1 : 0);
   setValue("alarmEnabled", cfg.alarm_enabled ? 1 : 0);
 
@@ -512,7 +528,7 @@ function validateNodeId() {
   const elm = document.getElementById("nodeId");
   if (!elm) return true;
   const v = elm.value.trim();
-  const regex = /^[A-Z0-9-]{3,16}$/;
+  const regex = /^[a-zA-Z0-9-]{3,16}$/;
   if (!regex.test(v)) {
     showError(elm, "Invalid Node ID");
     return false;
@@ -524,7 +540,7 @@ function validateAnimalId() {
   const elm = document.getElementById("animalId");
   if (!elm) return true;
   const v = elm.value.trim();
-  const regex = /^[A-Z0-9-]{3,16}$/;
+  const regex = /^[a-zA-Z0-9-]{3,16}$/;
   if (!regex.test(v)) {
     showError(elm, "Invalid Animal ID");
     return false;
@@ -576,9 +592,9 @@ function validateConfig() {
   } else {
     clearError(document.getElementById("partitionHours"));
   }
-  ok &= validateRange("estrusThreshold", 0, 500);
-  ok &= validateRange("baselineSamples", 1, 10000);
-  ok &= validateRange("dirtySamples", 1, 10000);
+  ok &= validateRange("estrusThreshold", 0, 100);
+  ok &= validateRange("baselineSamples", 10, 1000);
+  ok &= validateRange("dirtySamples", 10, 1000);
   ok &= validateRange("currentThreshold", 100, 150);
   ok &= validateRange("powerThreshold", 400, 600);
   return !!ok;
@@ -586,6 +602,8 @@ function validateConfig() {
 
 // SAVE CONFIG
 async function saveConfig() {
+  const btnSave = document.getElementById("saveConfigBtn");
+
   if (!validateConfig()) {
     showToast("Invalid configuration", "error");
     return;
@@ -597,10 +615,10 @@ async function saveConfig() {
     const animalId = (document.getElementById("animalId")?.value || "").trim();
     if (nodeId) params.append("node_id", nodeId);
     if (animalId) params.append("animal_id", animalId);
-    // params.append(
-    //   "ap_password",
-    //   document.getElementById("apPassword")?.value || "",
-    // );
+    params.append(
+      "ap_password",
+      document.getElementById("apPassword")?.value || "estrus123",
+    );
     params.append("prox_low", document.getElementById("proxLow")?.value || 0);
     params.append(
       "alarm_enabled",
@@ -629,7 +647,7 @@ async function saveConfig() {
     );
     params.append(
       "min_baseline_samples",
-      document.getElementById("baselineSamples")?.value || 10,
+      document.getElementById("baselineSamples")?.value || 300,
     );
     params.append(
       "dirty_timeout_samples",
@@ -646,35 +664,63 @@ async function saveConfig() {
     );
 
     const res = await apiJson("/api/config", { method: "POST", body: params });
+
     if (res && res.success) {
+      console.log("Config saved:", res);
+
       showToast("Konfigurasi tersimpan", "success");
       if (res.restart) {
-        alert("Perangkat akan restart karena perubahan konfigurasi.");
+        showToast("Perangkat akan restart karena perubahan konfigurasi.");
       }
       await loadConfig();
       return;
     }
+
     showToast("Gagal menyimpan konfigurasi", "error");
   } catch (err) {
     console.error(err);
+
     showToast("Gagal menyimpan konfigurasi", "error");
   }
 }
 
-// BUZZER STOP
-async function stopBuzzer() {
+// ALARM STATUS
+async function statusAlarm() {
   try {
-    const r = await apiJson("/api/buzzer/stop", { method: "POST" });
-    showToast("Buzzer dihentikan", "success");
+    const status = await apiJson("/api/alarm/status");
+    return status;
+  } catch (e) {
+    console.error("Failed to load alarm status", e);
+    return null;
+  }
+}
+
+// ALARM STOP
+async function stopAlarm() {
+  try {
+    await apiJson("/api/alarm/stop", { method: "POST" });
+    showToast("Alarm dihentikan", "success");
     await loadLatest();
   } catch (e) {
     console.error(e);
-    showToast("Gagal menghentikan buzzer", "error");
+    showToast("Gagal menghentikan alarm", "error");
+  }
+}
+
+// ALARM START
+async function startAlarm() {
+  try {
+    await apiJson("/api/alarm/start", { method: "POST" });
+    showToast("Alarm dihidupkan", "success");
+    await loadLatest();
+  } catch (e) {
+    console.error(e);
+    showToast("Gagal menghidupkan alarm", "error");
   }
 }
 
 // HISTORY with pagination
-async function loadHistory(date, page = 0, limit = 20) {
+async function loadHistory(date, page = 0, limit = 10) {
   console.log("loadHistory called!");
 
   if (!date) {
@@ -702,12 +748,14 @@ async function loadHistory(date, page = 0, limit = 20) {
     showToast("Gagal memuat history", "error");
   }
 }
+
 function nextHistory() {
   if (!hasNextPage) return;
   currentPage = (currentPage || 0) + 1;
   const date = document.getElementById("historyDate")?.value;
   loadHistory(date, currentPage);
 }
+
 function prevHistory() {
   if ((currentPage || 0) === 0) return;
   currentPage = (currentPage || 0) - 1;
