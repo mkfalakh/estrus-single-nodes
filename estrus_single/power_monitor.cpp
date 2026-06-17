@@ -2,12 +2,14 @@
 #include "rtc_manager.h"
 
 PowerStats powerStats = {
-  0,      // energy mWh | total konsumsi batre | default: 0
-  0,      // avg power mW | rata-rata power | default: 0
-  22200,  // kapasitas batre mWh | value 22200 = 3.7V * 6000mAh | rumus: value = tegangan minimum batre * kapasitas batre
-  22200, // remaining mWh | default: samakan dengan value kapasitas batre mWh
-  0, // persentase batre | default: 0
-  0 // estimasi habis batre dalam beberapa jam | default: 0
+  .energy_mWh = 0,      // energy mWh | total konsumsi batre | default: 0
+  .avgPower_mW = 0,      // avg power mW | rata-rata power | default: 0
+  .battery_capacity_mWh = 22200,  // kapasitas batre mWh | value 22200 = 3.7V * 6000mAh | rumus: value = tegangan minimum batre * kapasitas batre
+  .remaining_mWh = 22200, // remaining mWh | default: samakan dengan value kapasitas batre mWh
+  .percentage = 0, // persentase batre | default: 0
+  .estimated_hours_left = 0, // estimasi habis batre dalam beberapa jam | default: 0
+
+  .estimated_days_left = 0,
 };
 
 void updatePowerStats(float power_mW, float voltage, float dt) {
