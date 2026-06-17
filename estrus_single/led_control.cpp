@@ -1,11 +1,11 @@
 #include "HardwareSerial.h"
 #include "led_control.h"
 #include "config.h"
+#include "config_runtime.h"
 #include "system_state.h"
 #include "logger.h"
 
-static LedState ledState = LED_NORMAL;
-static LedState lastState = LED_NORMAL;
+volatile LedPattern ledPattern = LED_IDLE;
 
 static unsigned long lastBlink = 0;
 static int blinkStep = 0;
@@ -13,156 +13,266 @@ static bool ledOn = false;
 
 static unsigned long wifiWakeTs = 0;
 
+// helper
+void setLED(uint8_t r, uint8_t g, uint8_t b) {
+  // use analog PWM (pin adc)
+  // common anode LED RGB
+  analogWrite(LED_R, 255 - r);
+  analogWrite(LED_G, 225 - g);
+  analogWrite(LED_B, 225 - b);
+}
+
+inline void ledOff() {
+  setLED(0, 0, 0);
+}
+
+inline void ledGreen() {
+  setLED(0, 180, 0);
+}
+
+inline void ledRed() {
+  setLED(180, 0, 0);
+}
+
+inline void ledBlue() {
+  setLED(0, 0, 180);
+}
+
+inline void ledYellow() {
+  setLED(180, 180, 0);
+}
+
+inline void ledOrange() {
+  setLED(255, 60, 0);
+}
+
+// tes led
+// void testLEDColors() {
+
+//   ledRed();
+//   delay(2000);
+
+//   ledGreen();
+//   delay(2000);
+
+//   ledBlue();
+//   delay(2000);
+
+//   ledYellow();
+//   delay(2000);
+
+//   ledOrange();
+//   delay(2000);
+
+//   ledOff();
+// }
+
+// init led
 void initLED() {
   pinMode(LED_R, OUTPUT);
   pinMode(LED_G, OUTPUT);
   pinMode(LED_B, OUTPUT);
 
-  // ledcAttach(LED_R, LED_FREQ, LED_RES);
-  // ledcAttach(LED_G, LED_FREQ, LED_RES);
-  // ledcAttach(LED_B, LED_FREQ, LED_RES);
+  // testLEDColors();
+  ledOff();
 
-  setLED(0, 0, 0);
   Serial.println("✅ LED Ready");
 }
 
-void setLED(uint8_t r, uint8_t g, uint8_t b) {
-  // invert karena common anode
-  // ledcWrite(LED_R, 255 - r);
-  // ledcWrite(LED_G, 255 - g);
-  // ledcWrite(LED_B, 255 - b);
+// led pattern
+void updateLedPattern() {
 
-  // common cathode (GND)
-  // ledcWrite(LED_R, r);
-  // ledcWrite(LED_G, g);
-  // ledcWrite(LED_B, b);
+  if (sysIsSensorDirty()) {
 
-  // use analog PWM (pin adc)
-  analogWrite(LED_R, r);
-  analogWrite(LED_G, g);
-  analogWrite(LED_B, b);
-}
+    ledPattern = LED_SENSOR_DIRTY;
 
-void updateLedFromSystem() {
+  } else if (sysIsSystemFault()) {
 
-  if (sysIsError()) {
+    ledPattern = LED_FAULT;
 
-    ledState = LED_ERROR;
+  } else if (
+    SYS.estrus && (!SYS.alarm_ack || !sysConfig.stop_after_alarm)) {
 
-  } else if (sysIsSensorDirty()) {
-
-    ledState = LED_DIRTY;
+    ledPattern = LED_ESTRUS;
 
   } else if (sysIsLowBattery()) {
 
-    ledState = LED_LOW_BAT;
-
-  } else if (sysIsAlarm()) {
-
-    ledState = LED_ALARM;
+    ledPattern = LED_LOW_BATTERY;
 
   } else {
 
-    ledState = LED_NORMAL;
-  }
-
-  if (sysWifiWakeActive()) {
-
-    wifiWakeTs = millis();
+    ledPattern = LED_IDLE;
   }
 }
 
+// LED TASK
 void ledTask(void *pv) {
+
+  static LedPattern lastLedPattern = LED_NONE;
 
   while (true) {
 
-    updateLedFromSystem();  // baca state LED
+    updateLedPattern();
 
-    if (millis() - wifiWakeTs < 2000) {
+    // logging transisi led
+    if (ledPattern != lastLedPattern) {
 
-      if ((millis() / 200) % 2) {
+      switch (ledPattern) {
 
-        setLED(0, 0, 255);
+        case LED_IDLE:
+          logToFile("💡 LED -> IDLE (GREEN)");
+          break;
 
-      } else {
+        case LED_ESTRUS:
+          logToFile("💡 LED -> ESTRUS (BLUE)");
+          break;
 
-        setLED(0, 0, 0);
+        case LED_FAULT:
+          logToFile(
+            "💡 LED -> FAULT (YELLOW) SD:%d RTC:%d INA:%d",
+            SYS.sd_ok,
+            SYS.rtc_ok,
+            SYS.ina_ok);
+          break;
+
+        case LED_SENSOR_DIRTY:
+          logToFile(
+            "💡 LED -> SENSOR DIRTY (ORANGE) S1:%d S2:%d",
+            SYS.sensor1_dirty,
+            SYS.sensor2_dirty);
+          break;
+
+        case LED_LOW_BATTERY:
+          logToFile(
+            "💡 LED -> LOW BATTERY (RED) %.2f%%",
+            SYS.battery_pct);
+          break;
+
+        default:
+          break;
       }
 
-      vTaskDelay(
-        10 / portTICK_PERIOD_MS);
-
-      continue;
-    }
-
-    if (ledState != lastState) {
-      blinkStep = 0;
-      lastBlink = millis();
-      lastState = ledState;
+      lastLedPattern = ledPattern;
     }
 
     unsigned long now = millis();
 
-    switch (ledState) {
+    if (sysIsSensorDirty()) {
+
+      ledPattern = LED_SENSOR_DIRTY;
+
+    } else if (sysIsSystemFault()) {
+
+      ledPattern = LED_FAULT;
+
+    } else if (SYS.estrus && (!SYS.alarm_ack || !sysConfig.stop_after_alarm)) {
+
+      ledPattern = LED_ESTRUS;
+
+    } else if (sysIsLowBattery()) {
+
+      ledPattern = LED_LOW_BATTERY;
+
+    } else {
+
+      ledPattern = LED_IDLE;
+    }
+
+    switch (ledPattern) {
 
       // ====================
       // NORMAL (HIJAU NYALA TERUS)
       // ====================
-      case LED_NORMAL:
-        setLED(0, 255, 0);
+      case LED_IDLE:
+
+        ledGreen();
+
+        ledOn = false;
+        blinkStep = 0;
+
         break;
 
       // ====================
-      // SENSOR DIRTY (MERAH NYALA TERUS)
+      // SENSOR DIRTY (ORANYE)
       // ====================
-      case LED_DIRTY:
-        setLED(255, 0, 0);
-        break;
+      case LED_SENSOR_DIRTY:
 
-      // ====================
-      // LOW BAT (MERAH BLINK TERUS)
-      // ====================
-      case LED_LOW_BAT:
+        if (now - lastBlink > 150) {
 
-        if (now - lastBlink > 300) {
           lastBlink = now;
 
           ledOn = !ledOn;
 
-          if (ledOn)
-            setLED(255, 0, 0);
-          else
-            setLED(0, 0, 0);
+          if (ledOn) {
+            ledOrange();
+          } else {
+            ledOff();
+          }
 
-          // blinkStep++;
+          blinkStep++;
 
-          // if (blinkStep >= 6) {  // 3x
-          //   blinkStep = 0;
-          //   lastBlink = now + 1000;
-          // }
+          if (blinkStep >= 4) {
+
+            blinkStep = 0;
+
+            lastBlink = now + 1500;
+          }
         }
 
         break;
 
       // ====================
-      // ALARM (BIRU BLINK TERUS)
+      // LOW BAT (MERAH BLINK TERUS)
       // ====================
-      case LED_ALARM:
+      case LED_LOW_BATTERY:
 
-        if (now - lastBlink > 200) {
+        if (now - lastBlink > 500) {
+
           lastBlink = now;
 
           ledOn = !ledOn;
 
-          if (ledOn)
-            setLED(0, 0, 255);
-          else
-            setLED(0, 0, 0);
+          if (ledOn) {
+            ledRed();
+          } else {
+            ledOff();
+          }
 
           blinkStep++;
 
           if (blinkStep >= 4) {
+
             blinkStep = 0;
+
+            lastBlink = now + 3000;
+          }
+        }
+
+        break;
+
+      // ====================
+      // LED ESTRUS (BIRU BLINK TERUS)
+      // ====================
+      case LED_ESTRUS:
+
+        if (now - lastBlink > 200) {
+
+          lastBlink = now;
+
+          ledOn = !ledOn;
+
+          if (ledOn) {
+            ledBlue();
+          } else {
+            ledOff();
+          }
+
+          blinkStep++;
+
+          if (blinkStep >= 4) {
+
+            blinkStep = 0;
+
             lastBlink = now + 800;
           }
         }
@@ -170,31 +280,25 @@ void ledTask(void *pv) {
         break;
 
       // ====================
-      // ERROR INIT SISTEM (KUNING BLINK TERUS)
+      // ERROR/FAULT INIT SISTEM (KUNING BLINK TERUS)
       // ====================
-      case LED_ERROR:
+      case LED_FAULT:
 
-        if (now - lastBlink > 300) {
+        if (now - lastBlink > (ledOn ? 300 : 2000)) {
+
           lastBlink = now;
 
           ledOn = !ledOn;
 
-          if (ledOn)
-            setLED(170, 255, 0);
-          else
-            setLED(0, 0, 0);
+          if (ledOn) {
+            ledYellow();
+          } else {
+            ledOff();
+          }
         }
 
         break;
     }
-
-    // debug
-    // logToFile(
-    //   "[LED CHECK] SD:%d RTC:%d SENSOR:%d ERROR:%d\n",
-    //   SYS.sd_ok,
-    //   SYS.rtc_ok,
-    //   SYS.sensor_ok,
-    //   sysIsError());
 
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
