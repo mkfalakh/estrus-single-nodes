@@ -4,6 +4,7 @@
 #include "crypto.h"
 #include "config.h"
 #include "rtc_manager.h"
+#include "sd_manager.h"
 #include "csv_reverse.h"
 #include "buzzer.h"
 #include "config_runtime.h"
@@ -28,20 +29,20 @@ inline void touchClient() {
   lastClientTime = millis();
 }
 
-String jsonEscape(const String& s) {
+// String jsonEscape(const String& s) {
 
-  String out;
+//   String out;
 
-  for (char c : s) {
+//   for (char c : s) {
 
-    if (c == '\"')
-      out += '\\';
+//     if (c == '\"')
+//       out += '\\';
 
-    out += c;
-  }
+//     out += c;
+//   }
 
-  return out;
-}
+//   return out;
+// }
 
 String getContentType(String filename) {
   if (filename.endsWith(".html")) return "text/html";
@@ -289,12 +290,11 @@ void handleSystemStatus() {
 
   String json = "{";
 
-  json += "\"error\":" + String(sysIsError() ? 1 : 0) + ",";
+  json += "\"error\":" + String(sysIsSystemFault() ? 1 : 0) + ",";
   json += "\"sensor_dirty\":" + String(sysIsSensorDirty() ? 1 : 0) + ",";
   json += "\"low_battery\":" + String(sysIsLowBattery() ? 1 : 0) + ",";
   json += "\"alarm\":" + String(sysIsAlarm() ? 1 : 0) + ",";
   json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
-  json += "\"sd_mutex\":" + String(sdMutex != NULL);
 
   json += "}";
 
@@ -357,6 +357,8 @@ void handleHistory() {
     logToFile("❌ [history] failed to open: " + filename);
 
     sysSetSD(false);
+
+    giveSDMutex();
 
     server.send(
       500,
@@ -494,8 +496,8 @@ void handleHistory() {
   free(lines);
 }
 
-// ===== HANDLE BUZZER =====
-void handleStatusBuzzer() {
+// ===== HANDLE ALARM =====
+void handleAlarmStatus() {
 
   // if (!isAuthenticated()) {
   //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
@@ -504,17 +506,19 @@ void handleStatusBuzzer() {
 
   String json = "{";
 
-  json += "\"buzzer_active\":" + String(SYS.buzzer_active ? "true" : "false") + ",";
-  json += "\"alarm_enabled\":" + String(sysConfig.alarm_enabled ? "true" : "false") + ",";
-  json += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? "true" : "false") + ",";
+  json += "\"alarm_active\":" + String(sysIsAlarm() ? "true" : "false") + ",";
+  json += "\"alarm_estrus\":" + String(SYS.estrus ? "true" : "false") + ",";
+  json += "\"alarm_fault\":" + String(isFaultAlarm() ? "true" : "false") + ",";
+  json += "\"alarm_fault_muted\":" + String(SYS.fault_alarm_muted ? "true" : "false") + ",";
   json += "\"alarm_ack\":" + String(isAlarmAcknowledged() ? "true" : "false");
+  json += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? "true" : "false") + ",";
 
   json += "}";
 
   server.send(200, "application/json", json);
 }
 
-void handleStopBuzzer() {
+void handleAlarmStop() {
 
   // if (!isAuthenticated()) {
   //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
@@ -525,16 +529,25 @@ void handleStopBuzzer() {
 
     acknowledgeAlarm();
 
-    logToFile(
-      "🔕 Alarm acknowledged");
-
   } else {
 
     sysStopAlarm();
-
-    logToFile(
-      "🔕 Alarm stopped");
   }
+
+  logToFile("🔕 Alarm stopped via API");
+
+  server.send(200, "application/json", "{\"success\":true}");
+}
+
+void handleAlarmStart() {
+
+  SYS.alarm_ack = false;
+
+  SYS.fault_alarm_muted = false;
+
+  logToFile("🔔 Alarm resume via API");
+
+  // String json = "{\"success\":true}";
 
   server.send(200, "application/json", "{\"success\":true}");
 }
@@ -558,8 +571,12 @@ void handleDownload() {
   // String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
 
   File file = SD.open(filename);
+
   if (!file) {
+
     sysSetSD(false);
+
+    giveSDMutex();
 
     server.send(404, "text/plain", "File not found");
     return;
@@ -1296,7 +1313,7 @@ void handleLatest() {
   json += "\"rtc\":" + String(SYS.rtc_ok ? 1 : 0) + ",";
   json += "\"sensor\":" + String(SYS.sensor_ok ? 1 : 0) + ",";
   json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
-  json += "\"buzzer\":" + String(SYS.buzzer_active ? 1 : 0);
+  json += "\"buzzer\":" + String(SYS.alarm_active ? 1 : 0);
 
   json += "}";
 
@@ -1690,7 +1707,6 @@ void initWebServer() {
   // RTC | WAKTU DEVICE
   ROUTE("/api/rtc/sync", HTTP_POST, handleRTCSync);  // untuk sinkronisasi waktu RTC
   ROUTE("/api/rtc", HTTP_GET, handleRTC);            // untuk baca waktu RTC
-
   ROUTE("/api/rtc/clear", HTTP_POST, handleRTCClear);  // DEVELOPMENT ONLY | RESET TIME & STATE RTC
 
   // CONFIG
@@ -1698,9 +1714,10 @@ void initWebServer() {
   ROUTE("/api/config", HTTP_POST, handleSetConfig);         // untuk ubah config
   ROUTE("/api/config/reset", HTTP_GET, handleResetConfig);  // untuk reset config (belum dipakai)
 
-  // CONTROL
-  ROUTE("/api/status/buzzer", HTTP_GET, handleStatusBuzzer);  // untuk cek status alarm
-  ROUTE("/api/buzzer/stop", HTTP_POST, handleStopBuzzer);     // untuk tombol stop alarm
+  // CONTROL ALARM
+  ROUTE("/api/alarm/status", HTTP_GET, handleAlarmStatus);  // cek status alarm
+  ROUTE("/api/alarm/start", HTTP_POST, handleAlarmStart);   // start alarm
+  ROUTE("/api/alarm/stop", HTTP_POST, handleAlarmStop);     // stop alarm
 
   // SYSTEM
   ROUTE("/api/system", HTTP_GET, handleSystemStatus);  // untuk cek kondisi device

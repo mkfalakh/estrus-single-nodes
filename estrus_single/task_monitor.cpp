@@ -66,16 +66,20 @@ void watchdogTask(void* pv) {
       buttonTaskHandle);
 
     printTask(
-      "wifiTask",
+      "WiFi",
       wifiTaskHandle);
 
-      printTask(
-      "webServerTask",
+    printTask(
+      "webServer",
       webServerTaskHandle);
 
     printTask(
       "Cleanup",
       cleanupStorageTaskHandle);
+
+    printTask(
+      "SDMonitor",
+      sdMonitorTaskHandle);
 
     // Serial.printf(
     //   "Heap:%u | PSRAM:%u\n",

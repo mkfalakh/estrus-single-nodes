@@ -21,3 +21,7 @@ void buzzerTask(void *pv);
 
 void buzzerPlay(BuzzerPattern pattern);
 void buzzerStop();
+
+bool shouldAlarm();
+void acknowledgeAlarm();
+bool isFaultAlarm();

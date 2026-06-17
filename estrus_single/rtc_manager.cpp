@@ -93,7 +93,7 @@ bool initRTC() {
 
   sysSetRTC(true);
 
-  logToFile(
+  Serial.println(
     "✅ RTC OK");
 
   return true;

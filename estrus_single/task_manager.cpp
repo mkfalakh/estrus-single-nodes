@@ -9,6 +9,7 @@
 #include "sens_proximity.h"
 #include "storage_cleanup.h"
 #include "web_server.h"
+#include "sd_manager.h"
 
 TaskHandle_t sensorTaskHandle = NULL;
 TaskHandle_t csvTaskHandle = NULL;
@@ -19,6 +20,7 @@ TaskHandle_t buttonTaskHandle = NULL;
 TaskHandle_t wifiTaskHandle = NULL;
 TaskHandle_t webServerTaskHandle = NULL;
 TaskHandle_t cleanupStorageTaskHandle = NULL;
+TaskHandle_t sdMonitorTaskHandle = NULL;
 
 TaskHandle_t watchdogTaskHandle = NULL;
 
@@ -26,6 +28,18 @@ TaskHandle_t watchdogTaskHandle = NULL;
 // START ALL TASKS
 // ========================
 void startTasks() {
+
+  // =====================================
+  // SDCard MONITORING
+  // =====================================
+  xTaskCreatePinnedToCore(
+    sdMonitorTask,
+    "SDMonitor",
+    4096,
+    NULL,
+    3,
+    &sdMonitorTaskHandle,
+    1);
 
   // =====================================
   // SENSOR TASK
@@ -69,7 +83,7 @@ void startTasks() {
   xTaskCreatePinnedToCore(
     ledTask,
     "LED",
-    2048,
+    4096,
     NULL,
     1,
     &ledTaskHandle,
@@ -81,7 +95,7 @@ void startTasks() {
   xTaskCreatePinnedToCore(
     buzzerTask,
     "Buzzer",
-    2048,
+    4096,
     NULL,
     1,
     &buzzerTaskHandle,
@@ -105,7 +119,7 @@ void startTasks() {
   xTaskCreatePinnedToCore(
     wifiTask,
     "WiFiTask",
-    3072,
+    4096,
     NULL,
     1,
     &wifiTaskHandle,
@@ -129,7 +143,7 @@ void startTasks() {
   xTaskCreatePinnedToCore(
     cleanupStorageTask,
     "Cleanup",
-    4096,
+    8192,
     NULL,
     1,
     &cleanupStorageTaskHandle,

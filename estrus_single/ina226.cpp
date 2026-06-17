@@ -1,4 +1,4 @@
-#include "sens_ina226.h"
+#include "ina226.h"
 #include "config.h"
 #include "system_state.h"
 #include "logger.h"
@@ -21,13 +21,13 @@ void initINA226() {
   Wire.begin(I2C_SDA, I2C_SCL);
 
   if (!ina226.init()) {
-    logToFile("❌ INA226 init gagal!");
-    sysSetSensor(false);
-    while (1)
-      ;
+    logToFile("❌ INA init gagal!");
+    sysSetINA(false);
+    // while (1)
+    //   ;
   } else {
-    logToFile("✅ INA226 OK");
-    sysSetSensor(true);
+    logToFile("✅ INA OK");
+    sysSetINA(true);
   }
 
   // Optional: averaging biar stabil

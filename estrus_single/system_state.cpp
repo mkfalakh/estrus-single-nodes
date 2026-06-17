@@ -1,10 +1,12 @@
 #include "system_state.h"
 #include "storage_stats.h"
+#include "logger.h"
 
 SystemState SYS = {
 
   .sd_ok = false,
   .rtc_ok = false,
+  .ina_ok = false,
   .sensor_ok = false,
   .sensor_dirty = false,
 
@@ -25,7 +27,8 @@ SystemState SYS = {
   .partition = 0,
   .baseline_samples = 0,
 
-  .buzzer_active = false,
+  .alarm_active = false,
+  .fault_alarm_muted = false,
   .alarm_ack = false,
   .last_alarm_ts = 0,
 
@@ -35,8 +38,10 @@ SystemState SYS = {
 
 static bool lastEstrus = false;
 
+volatile unsigned long sdRecoveredAt = 0;
+
 // ========================
-// WRITE
+// WRITE SYSTEM
 // ========================
 void sysSetSD(bool ok) {
   SYS.sd_ok = ok;
@@ -44,8 +49,18 @@ void sysSetSD(bool ok) {
 void sysSetRTC(bool ok) {
   SYS.rtc_ok = ok;
 }
-void sysSetSensor(bool ok) {
+void sysSetINA(bool ok) {
+  SYS.ina_ok = ok;
+}
+
+void sysSetSensorHealth(bool ok) {
+
   SYS.sensor_ok = ok;
+}
+
+void sysSetSensorDirty(bool dirty) {
+
+  SYS.sensor_dirty = dirty;
 }
 
 void sysSetPower(float pct, float v, float c, float p) {
@@ -89,20 +104,27 @@ void sysSetSensorState(bool s1, bool s2, bool d1, bool d2) {
 // ========================
 // ALARM CONTROL
 // ========================
+void sysSetAlarm(bool value) {
+
+  SYS.alarm_active = value;
+}
+
 void sysStartAlarm() {
-  SYS.buzzer_active = true;
+
+  SYS.alarm_active = true;
+
+  logToFile(
+    "🔊 Alarm Berbunyi");
 
   SYS.last_alarm_ts = millis();
 }
 
 void sysStopAlarm() {
-  SYS.buzzer_active = false;
-}
 
-void acknowledgeAlarm() {
-  SYS.alarm_ack = true;
+  SYS.alarm_active = false;
 
-  sysStopAlarm();
+  logToFile(
+    "🔕 Alarm stopped");
 }
 
 void resetAlarmAcknowledgement() {
@@ -117,8 +139,8 @@ bool isAlarmAcknowledged() {
 // READ (HELPER)
 // ========================
 // HEALTH
-bool sysIsError() {
-  return (!SYS.sd_ok || !SYS.rtc_ok || !SYS.sensor_ok);
+bool sysIsSystemFault() {
+  return (!SYS.sd_ok || !SYS.rtc_ok || !SYS.ina_ok);
 }
 
 bool sysIsLowBattery() {
@@ -126,26 +148,15 @@ bool sysIsLowBattery() {
 }
 
 bool sysIsAlarm() {
-  return SYS.buzzer_active;
+  return SYS.alarm_active;
 }
 
 bool sysIsEstrus() {
   return SYS.estrus;
 }
 
-void sysSetSensorHealth(bool ok) {
-
-  SYS.sensor_ok = ok;
-}
-
-void sysSetSensorDirty(bool dirty) {
-
-  SYS.sensor_dirty = dirty;
-}
-
 bool sysIsSensorDirty() {
-
-  return SYS.sensor_dirty;
+  return SYS.sensor1_dirty || SYS.sensor2_dirty;
 }
 
 // MODEL

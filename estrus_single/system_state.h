@@ -6,20 +6,21 @@
 // ========================
 // ENUM STATUS
 // ========================
-enum SystemHealth {
-  SYS_OK,
-  SYS_WARN,
-  SYS_ERROR
-};
+// enum SystemHealth {
+//   SYS_OK,
+//   SYS_WARN,
+//   SYS_ERROR
+// };
 
 // ========================
 // STRUCT STATE
 // ========================
 typedef struct {
 
-  // --- health ---
+  // --- system health ---
   bool sd_ok;
   bool rtc_ok;
+  bool ina_ok;
   bool sensor_ok;
   bool sensor_dirty;
 
@@ -43,8 +44,9 @@ typedef struct {
   uint8_t partition;
   uint32_t baseline_samples;
 
-  // --- control ---
-  bool buzzer_active;
+  // --- control alarm ---
+  bool alarm_active;
+  bool fault_alarm_muted;
   bool alarm_ack;
   unsigned long last_alarm_ts;
 
@@ -58,13 +60,14 @@ typedef struct {
 // GLOBAL INSTANCE
 // ========================
 extern SystemState SYS;
+extern volatile unsigned long sdRecoveredAt;
 
 // ========================
 // API (WRITE)
 // ========================
 void sysSetSD(bool ok);
 void sysSetRTC(bool ok);
-void sysSetSensor(bool ok);
+void sysSetINA(bool ok);
 void sysSetPower(float pct, float v, float c, float p);
 
 void sysSetEstrusResult(const EstrusResult &r);
@@ -76,7 +79,7 @@ void sysStopAlarm();
 // ========================
 // API (HELPER)
 // ========================
-bool sysIsError();
+bool sysIsSystemFault();
 bool sysIsLowBattery();
 bool sysIsAlarm();
 bool sysIsEstrus();
@@ -92,7 +95,7 @@ float sysGetCurrentRate();
 float sysGetBaselineRate();
 
 // ALARM
-void acknowledgeAlarm();
+void sysSetAlarm(bool value);
 void resetAlarmAcknowledgement();
 bool isAlarmAcknowledged();
 

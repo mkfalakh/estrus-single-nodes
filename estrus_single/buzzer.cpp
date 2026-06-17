@@ -48,25 +48,131 @@ void buzzerPlay(BuzzerPattern pattern) {
   buzzerPattern = pattern;
 }
 
+// manage alarm estrus & alarm system
+bool isFaultAlarm() {
+
+  return !SYS.sd_ok || !SYS.rtc_ok || !SYS.ina_ok || SYS.sensor1_dirty || SYS.sensor2_dirty;
+}
+
+bool shouldAlarm() {
+
+  bool estrusAlarm =
+    SYS.estrus && sysConfig.alarm_enabled && (!SYS.alarm_ack || !sysConfig.stop_after_alarm);
+
+  bool faultAlarm =
+    isFaultAlarm() && sysConfig.alarm_enabled && !SYS.fault_alarm_muted;
+
+  return estrusAlarm || faultAlarm;
+}
+
+void acknowledgeAlarm() {
+
+  if (SYS.estrus) {
+
+    SYS.alarm_ack = true;
+    logToFile("🔕 Estrus terdeteksi. Alarm acknowledged");
+  }
+
+  if (isFaultAlarm()) {
+
+    SYS.fault_alarm_muted = true;
+    logToFile("🔕 Fault terdeteksi. Alarm fault muted");
+  }
+
+  sysSetAlarm(false);
+
+  buzzerPattern = BUZZER_STOP_CONFIRM;
+
+  logToFile("🔕 Estrus atau Fault tidak terdeteksi. Alarm dihentikan sementara");
+}
 
 // BUZZER TASK
 void buzzerTask(void *pv) {
+
+  static bool lastFaultAlarm = false;
+  static bool lastEstrusAlarm = false;
+  static bool faultBeeping = false;
 
   while (true) {
 
     unsigned long now = millis();
     static unsigned long lastLowBatteryBeep = 0;
 
-    // ERROR MODE (PRIORITY)
-    if (sysIsError()) {
+    // reset mute fault jika fault sudah hilang
+    if (!isFaultAlarm() && SYS.fault_alarm_muted) {
 
-      if (now - lastToggle > 800) {
+      SYS.fault_alarm_muted = false;
+
+      logToFile("🔔 Fault Alarm mute reset");
+    }
+
+    // reset mute estrus jika estrus selesai
+    if (!SYS.estrus && SYS.alarm_ack) {
+
+      SYS.alarm_ack = false;
+
+      logToFile("🔔 Estrus Alarm ACK reset");
+    }
+
+    // update status alarm global
+    sysSetAlarm(shouldAlarm());
+
+    bool estrusAlarm =
+      SYS.estrus && sysConfig.alarm_enabled && (!SYS.alarm_ack || !sysConfig.stop_after_alarm);
+
+    bool faultAlarm =
+      isFaultAlarm() && sysConfig.alarm_enabled && !SYS.fault_alarm_muted;
+
+    // Log hanya saat alarm mulai berbunyi
+    if (faultAlarm && !lastFaultAlarm) {
+
+      logToFile(
+        "🚨 Fault alarm active (SD:%d RTC:%d INA:%d S1:%d S2:%d)",
+        SYS.sd_ok,
+        SYS.rtc_ok,
+        SYS.ina_ok,
+        SYS.sensor1_dirty,
+        SYS.sensor2_dirty);
+    }
+
+    // Log saat fault selesai
+    if (!faultAlarm && lastFaultAlarm) {
+
+      logToFile(
+        "✅ Fault alarm cleared");
+    }
+
+    // Log hanya saat estrus mulai berbunyi
+    if (estrusAlarm && !lastEstrusAlarm) {
+
+      logToFile(
+        "🐄 Estrus alarm active");
+    }
+
+    // Log saat estrus selesai
+    if (!estrusAlarm && lastEstrusAlarm) {
+
+      logToFile(
+        "✅ Estrus alarm cleared");
+    }
+
+    lastFaultAlarm = faultAlarm;
+    lastEstrusAlarm = estrusAlarm;
+
+    // SYSTEM ERROR MODE (PRIORITY)
+    if (faultAlarm) {
+
+      if (now - lastToggle > (faultBeeping ? 300 : 2000)) {
+
         lastToggle = now;
 
-        buzOn = !buzOn;
+        faultBeeping = !faultBeeping;
 
-        if (buzOn) buzzerOn();
-        else buzzerOff();
+        if (faultBeeping) {
+          buzzerOn();
+        } else {
+          buzzerOff();
+        }
       }
 
       vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -74,13 +180,15 @@ void buzzerTask(void *pv) {
     }
 
     // LOW BATTERY MODE
-    if (sysIsLowBattery() && !sysIsAlarm() && sysConfig.alarm_enabled) {
+    if (sysIsLowBattery()
+        && !sysIsAlarm()
+        && sysConfig.alarm_enabled) {
 
-      if (millis() - lastLowBatteryBeep >= LOW_BATTERY_INTERVAL_MS) {
+      if (now - lastLowBatteryBeep >= LOW_BATTERY_INTERVAL_MS) {
 
         buzzerPattern = BUZZER_LOW_BATTERY;
 
-        lastLowBatteryBeep = millis();
+        lastLowBatteryBeep = now;
       }
     }
 
@@ -135,8 +243,8 @@ void buzzerTask(void *pv) {
         break;
     }
 
-    // ALARM MODE
-    if (sysIsAlarm() && sysConfig.alarm_enabled) {
+    // ESTRUS MODE
+    if (estrusAlarm) {
 
       if (now - lastToggle > 200) {
         lastToggle = now;

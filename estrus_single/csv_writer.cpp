@@ -1,6 +1,7 @@
 #include "csv_writer.h"
 #include "logger.h"
 #include "rtc_manager.h"
+#include "sd_manager.h"
 #include "system_state.h"
 #include "config_runtime.h"
 #include "sensor_data.h"
@@ -47,27 +48,29 @@ static void writeHeaderIfNeeded(File &f) {
   }
 }
 
-static bool flushCsvBuffer(
-  SensorData *buffer,
-  int &count) {
+static bool flushCsvBuffer(SensorData *buffer, int &count) {
 
-  if (count <= 0)
-    return true;
+  if (count <= 0) return true;
 
-  if (!sdMutex) {
-    logToFile("❌ CSV: mutex null");
+  if (!SYS.sd_ok) {
     return false;
   }
 
-  if (!xSemaphoreTake(
-        sdMutex,
-        pdMS_TO_TICKS(500))) {
+  // tunggu SD stabil setelah remount sdcard
+  if (sdRecoveredAt != 0 && millis() - sdRecoveredAt < 3000) {
+
+    return false;
+  }
+
+  if (!takeSDMutex("CSV", pdMS_TO_TICKS(3000))) {
 
     logToFile("⚠️ CSV: mutex timeout");
     return false;
   }
 
   bool success = false;
+
+  int maxWrite = min(count, 10);
 
   File f = SD.open(
     getCsvPath(),
@@ -79,7 +82,7 @@ static bool flushCsvBuffer(
 
     writeHeaderIfNeeded(f);
 
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < maxWrite; i++) {
 
       SensorData &d = buffer[i];
 
@@ -104,12 +107,9 @@ static bool flushCsvBuffer(
         d.battery_pct);
     }
 
-    csvRowsWritten += count;
+    csvRowsWritten += maxWrite;
 
     f.close();
-
-    // update metadata sdcard
-    // updateFileTimestamp(filename.c_str());
 
     success = true;
 
@@ -120,38 +120,34 @@ static bool flushCsvBuffer(
     logToFile(
       "❌ CSV open failed: %s",
       getCsvPath().c_str());
+  }
+
+  giveSDMutex();
+
+  if (!success) {
 
     return false;
   }
 
-  xSemaphoreGive(sdMutex);
+  if (count > maxWrite) {
 
-  if (success) {
-
-    count = 0;
+    memmove(
+      buffer,
+      buffer + maxWrite,
+      (count - maxWrite) * sizeof(SensorData));
   }
+
+  count -= maxWrite;
 
   sysSetSD(true);
 
-  return success;
+  return true;
 }
 
 // ========================
 // INIT
 // ========================
 void initCSVWriter() {
-
-  // ========================
-  // CREATE MUTEX FIRST
-  // ========================
-  sdMutex = xSemaphoreCreateMutex();
-
-  if (!sdMutex) {
-
-    Serial.println("❌ SD Mutex gagal");
-
-    return;
-  }
 
   if (!SD.exists("/data")) {
 
@@ -178,16 +174,6 @@ void initCSVWriter() {
 // ========================
 void csvWriterTask(void *pv) {
 
-  if (!sdMutex) {
-
-    Serial.println(
-      "❌ csvWriterTask no mutex");
-
-    vTaskDelete(NULL);
-
-    return;
-  }
-
   // lebih aman jika batch dibesarkan nanti
   static SensorData buffer[CSV_BATCH_SIZE];
 
@@ -199,20 +185,25 @@ void csvWriterTask(void *pv) {
   uint32_t rowsWritten = 0;
 
   static uint8_t lastDay = 0;
+  static bool csvPaused = false;
 
   while (true) {
 
     // skip write csv if RTC invalid/broken
-    if (!SYS.rtc_ok) {
+    if (!SYS.rtc_ok || !SYS.sd_ok) {
 
-      logToFile(
-        "⚠ CSV skipped: RTC invalid");
+      if (!csvPaused) {
+        csvPaused = true;
 
-      vTaskDelay(
-        pdMS_TO_TICKS(60000));
+        logToFile("CSV paused: RTC invalid or SD invalid");
+      }
+
+      vTaskDelay(pdMS_TO_TICKS(5000));
 
       continue;
     }
+
+    csvPaused = false;
 
     DateTime now = getNow();
 
@@ -243,7 +234,7 @@ void csvWriterTask(void *pv) {
         == pdTRUE) {
 
       // flush dulu jika penuh
-      if (count >= CSV_BATCH_SIZE) {
+      if (SYS.sd_ok && count >= CSV_BATCH_SIZE) {
 
         int oldCount = count;
 
@@ -261,8 +252,7 @@ void csvWriterTask(void *pv) {
       // PERIODIC FLUSH
       // ========================
 
-      if (
-        count > 0 && millis() - lastFlush >= CSV_FLUSH_INTERVAL) {
+      if (SYS.sd_ok && count > 0 && millis() - lastFlush >= CSV_FLUSH_INTERVAL) {
 
         int oldCount = count;
 

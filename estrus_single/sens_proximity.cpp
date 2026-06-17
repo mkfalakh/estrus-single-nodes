@@ -1,6 +1,6 @@
 #include "esp32-hal-gpio.h"
 #include "sens_proximity.h"
-#include "sens_ina226.h"
+#include "ina226.h"
 #include "config.h"
 #include "config_runtime.h"
 #include "logger.h"

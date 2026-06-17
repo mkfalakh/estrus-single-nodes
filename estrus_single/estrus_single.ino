@@ -1,8 +1,9 @@
 #include "config.h"
 #include "logger.h"
 #include "rtc_manager.h"
+#include "sd_manager.h"
 #include "web_server.h"
-#include "sens_ina226.h"
+#include "ina226.h"
 #include "wifi_manager.h"
 #include "auth.h"
 #include "crypto.h"
@@ -40,6 +41,7 @@ void setup() {
   initLogger();
 
   initSDCard();  // di sini set sysSetSD()
+  createSDMutex();
 
   if (SYS.sd_ok) {
     setSDReadyForLog(true);
@@ -47,7 +49,7 @@ void setup() {
 
   initCSVWriter();
 
-  initINA226();  // sysSetSensor() // comment ini jika buat trial atau tidak ada modulnya
+  initINA226();
 
   initProximity();  // pinMode sensor
   setProximityActiveLow(sysConfig.prox_active_low);
@@ -98,7 +100,7 @@ void loop() {
     Serial.println("=========  SYSTEM STATE  ==========");
 
     Serial.printf("ERR: %d | RTCSync: %d | SD: %d | RTC: %d | SENSOR: %d | ESTRUS: %d | BUZZ: %d",
-                  sysIsError(), SYS.rtc_ever_synced, SYS.sd_ok, SYS.rtc_ok, SYS.sensor_ok, sysIsEstrus(), sysIsAlarm());
+                  sysIsSystemFault(), SYS.rtc_ever_synced, SYS.sd_ok, SYS.rtc_ok, SYS.sensor_ok, sysIsEstrus(), sysIsAlarm());
 
     Serial.println("========== RAM & Storage ==========");
 
