@@ -1,50 +1,21 @@
+#include "projdefs.h"
 #include "logger.h"
 #include "rtc_manager.h"
+#include "sd_manager.h"
 #include "config.h"
 #include "system_state.h"
 #include "config_runtime.h"
 #include <stdarg.h>
 #include <SD.h>
-#include <SPI.h>
 
-static SPIClass spiSD(FSPI);  // 🔥 ESP32-S3 pakai FSPI
-SemaphoreHandle_t sdMutex = NULL;
-
-bool initSDCard() {
-  spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-
-  if (!SD.begin(SD_CS, spiSD)) {
-    Serial.println("❌ SDCard init gagal!");
-    sysSetSD(false);
-    return false;
-  }
-
-  if (!SD.exists("/log")) SD.mkdir("/log");
-
-  Serial.println("✅ SDCard OK");
-  sysSetSD(true);
-  return true;
-}
-
-void checkFreeSD() {
-  uint64_t total = SD.totalBytes();
-  uint64_t used = SD.usedBytes();
-
-  logToFile("SDCard used: %llu | Total: %llu", used, total);
-}
-
-void logToFile(String msg) {
-  logToFile("%s", msg.c_str());
-}
-
-// ========================
-// CONFIG
-// ========================
 #define LOG_QUEUE_SIZE 50
 #define LOG_LINE_SIZE 256
 #define LOG_BATCH_SIZE 5
+#define LOG_FLUSH_INTERVAL 5000
 
-#define LOG_FLUSH_INTERVAL 3000
+SemaphoreHandle_t sdMutex = NULL;
+QueueHandle_t logQueue;
+bool sdReadyForLog = false;
 
 // ========================
 // TYPES
@@ -52,13 +23,6 @@ void logToFile(String msg) {
 typedef struct {
   char text[LOG_LINE_SIZE];
 } LogMessage;
-
-// ========================
-// GLOBAL
-// ========================
-QueueHandle_t logQueue;
-
-bool sdReadyForLog = false;
 
 // ========================
 // HELPERS
@@ -80,18 +44,6 @@ static String getLogPath() {
 // INIT
 // ========================
 void initLogger() {
-
-  // ========================
-  // CREATE MUTEX FIRST
-  // ========================
-  sdMutex = xSemaphoreCreateMutex();
-
-  if (!sdMutex) {
-
-    Serial.println("❌ SD Mutex gagal");
-
-    return;
-  }
 
   // ========================
   // CREATE LOG QUEUE
@@ -145,19 +97,15 @@ void logToFile(const char *fmt, ...) {
   xQueueSend(logQueue, &item, 0);
 }
 
+// combine dengan logToFile diatas
+void logToFile(String msg) {
+  logToFile("%s", msg.c_str());
+}
+
 // ========================
 // LOGGER TASK
 // ========================
 void loggerTask(void *pv) {
-
-  if (!sdMutex) {
-
-    Serial.println("❌ loggerTask no mutex");
-
-    vTaskDelete(NULL);
-
-    return;
-  }
 
   static LogMessage buffer[LOG_BATCH_SIZE];
 
@@ -166,6 +114,15 @@ void loggerTask(void *pv) {
   unsigned long lastFlush = millis();
 
   while (true) {
+
+    if (!SYS.sd_ok || !SYS.rtc_ok) {
+
+      Serial.println("⚠️ Loggger paused: RTC invalid or SD invalid");
+
+      vTaskDelay(pdMS_TO_TICKS(5000));
+
+      continue;
+    }
 
     LogMessage incoming;
 
@@ -181,6 +138,11 @@ void loggerTask(void *pv) {
 
         if (sdReadyForLog) {
 
+          if (!takeSDMutex("LOGGER", pdMS_TO_TICKS(500))) {
+
+            continue;
+          }
+
           File f = SD.open(getLogPath(), FILE_APPEND);
 
           if (f) {
@@ -193,8 +155,8 @@ void loggerTask(void *pv) {
 
             f.close();
 
-            // update metadata sdcard
-            // updateFileTimestamp(filename.c_str());
+            giveSDMutex();
+
           }
         }
 
@@ -211,6 +173,11 @@ void loggerTask(void *pv) {
 
       if (count > 0 && sdReadyForLog) {
 
+        if (sdRecoveredAt != 0 && millis() - sdRecoveredAt < 3000) {
+
+          continue;
+        }
+
         File f = SD.open(getLogPath(), FILE_APPEND);
 
         if (f) {
@@ -223,8 +190,6 @@ void loggerTask(void *pv) {
 
           f.close();
 
-          // update metadata sdcard
-          // updateFileTimestamp(filename.c_str());
         }
 
         count = 0;
