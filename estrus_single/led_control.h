@@ -1,12 +1,19 @@
 #pragma once
 #include <Arduino.h>
 
-enum LedState {
-  LED_NORMAL,
-  LED_LOW_BAT,
-  LED_ALARM,
-  LED_DIRTY,
-  LED_ERROR
+enum LedPattern {
+
+  LED_NONE,
+
+  LED_IDLE,
+
+  LED_ESTRUS,
+
+  LED_FAULT,
+
+  LED_SENSOR_DIRTY,
+
+  LED_LOW_BATTERY
 };
 
 void initLED();
