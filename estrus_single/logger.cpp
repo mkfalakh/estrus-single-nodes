@@ -156,7 +156,6 @@ void loggerTask(void *pv) {
             f.close();
 
             giveSDMutex();
-
           }
         }
 
@@ -178,19 +177,25 @@ void loggerTask(void *pv) {
           continue;
         }
 
+        if (!takeSDMutex("LOGGER", pdMS_TO_TICKS(500))) {
+
+          continue;
+        }
+
         File f = SD.open(getLogPath(), FILE_APPEND);
 
         if (f) {
 
-          String filename = getLogPath();
+          // String filename = getLogPath();
 
           for (int i = 0; i < count; i++) {
             f.println(buffer[i].text);
           }
 
           f.close();
-
         }
+
+        giveSDMutex();
 
         count = 0;
       }
