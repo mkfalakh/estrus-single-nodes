@@ -87,12 +87,12 @@ void checkTimeTransitions() {
   // ======================
   if (lastDay != 255 && newDay != lastDay) {
 
-    invalidateBaselineCache();
+    triggerBaselineRecompute();
 
     resetAlarmAcknowledgement();
 
     logToFile(
-      "📅 New day → baseline cache reset");
+      "📅 New day → baseline recomputed");
   }
 
   // ======================
@@ -172,7 +172,7 @@ EstrusResult evaluateEstrus() {
 
   uint32_t baselineSamples;
 
-  if (!loadPartitionBaseline(
+  if (!getCachedBaseline(
         p,
         baselineRate,
         baselineSamples)) {

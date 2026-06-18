@@ -1110,7 +1110,7 @@ void handleSetConfig() {
     resetRuntimePartitionStats(
       now.hour() / sysConfig.partition_hours);
 
-    invalidateBaselineCache();
+    triggerBaselineRecompute();
 
     logToFile(
       "📊 Partition stats reset. | updated: %u hours",
@@ -1136,7 +1136,7 @@ void handleSetConfig() {
   // retention days berubah
   if (retentionChanged) {
 
-    invalidateBaselineCache();
+    triggerBaselineRecompute();
 
     logToFile(
       "🗂 Retention days updated: %u days",
@@ -1154,7 +1154,7 @@ void handleSetConfig() {
   // min baseline samples berubah
   if (baselineSampleChanged) {
 
-    invalidateBaselineCache();
+    triggerBaselineRecompute();
 
     logToFile(
       "🔁 min_baseline_samples updated: %d",

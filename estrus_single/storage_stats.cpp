@@ -2,29 +2,26 @@
 #include "config_runtime.h"
 #include "rtc_manager.h"
 #include "system_state.h"
+#include "sd_manager.h"
+#include "logger.h"
 #include <SD.h>
 
 #define CSV_BUFFER_SIZE 128
-
-struct BaselineCache {
-
-  uint8_t partition;
-  uint8_t day;
-  float baseline;
-  uint32_t samples;
-  bool valid;
-};
-
-static BaselineCache baselineCache = {
-
-  255,
-  255,
-  0,
-  0,
-  false
-};
+#define MAX_PARTITIONS  24
 
 uint32_t csvRowsWritten = 0;
+
+// =====================================================
+// PRE-COMPUTED BASELINE (in RAM, per partition)
+// =====================================================
+
+struct PrecomputedBaseline {
+  float    rate;
+  uint32_t samples;
+  bool     valid;
+};
+
+static PrecomputedBaseline precomputed[MAX_PARTITIONS];
 
 // =====================================================
 // PARTITION
@@ -165,56 +162,33 @@ static String getHistoricalFile(int daysAgo) {
 }
 
 // =====================================================
-// BASELINE
+// BASELINE RECOMPUTE
+// Scans all historical files in one pass, accumulating
+// standing/total counts for every partition at once.
 // =====================================================
 
-bool loadPartitionBaseline(uint8_t partition,
-                           float &baselineRate,
-                           uint32_t &baselineSamples) {
+void triggerBaselineRecompute() {
 
-  baselineRate = 0.0f;
-  baselineSamples = 0;
-  uint32_t standingCount = 0;
-  uint32_t totalCount = 0;
-
-  DateTime now = getNow();
-  uint8_t today = now.day();
-
-  if (baselineCache.valid && baselineCache.partition == partition &&
-
-      baselineCache.day == today) {
-    baselineRate =
-      baselineCache.baseline;
-
-    baselineSamples =
-      baselineCache.samples;
-
-    baselineCache.partition =
-      partition;
-
-    baselineCache.day =
-      today;
-
-    baselineCache.baseline =
-      baselineRate;
-
-    baselineCache.samples =
-      baselineSamples;
-
-    baselineCache.valid =
-      true;
-
-    return true;
+  for (int p = 0; p < MAX_PARTITIONS; p++) {
+    precomputed[p].valid = false;
   }
 
-  // ==========================================
-  // LOOP HISTORICAL FILES
-  // ==========================================
+  if (!SYS.rtc_ok || sysConfig.partition_hours == 0) {
+    logToFile("⚠️ Baseline recompute skipped: RTC/partition not ready");
+    return;
+  }
 
-  for (
-    int d = 1;
-    d <= sysConfig.retention_days;
-    d++) {
+  uint32_t standingCounts[MAX_PARTITIONS] = {0};
+  uint32_t totalCounts[MAX_PARTITIONS]    = {0};
+
+  if (!takeSDMutex("recompute", pdMS_TO_TICKS(2000))) {
+    logToFile("⚠️ Baseline recompute: SD mutex timeout");
+    return;
+  }
+
+  uint16_t yieldCtr = 0;
+
+  for (int d = 1; d <= sysConfig.retention_days; d++) {
 
     String filename = getHistoricalFile(d);
 
@@ -224,14 +198,12 @@ bool loadPartitionBaseline(uint8_t partition,
     if (!SD.exists(filename))
       continue;
 
-    File f =
-      SD.open(filename);
+    File f = SD.open(filename);
 
     if (!f)
       continue;
 
     // skip header
-
     f.readStringUntil('\n');
 
     char line[CSV_BUFFER_SIZE];
@@ -239,10 +211,7 @@ bool loadPartitionBaseline(uint8_t partition,
     while (f.available()) {
 
       size_t len =
-        f.readBytesUntil(
-          '\n',
-          line,
-          sizeof(line) - 1);
+        f.readBytesUntil('\n', line, sizeof(line) - 1);
 
       line[len] = '\0';
 
@@ -251,76 +220,81 @@ bool loadPartitionBaseline(uint8_t partition,
 
       char timestamp[24];
 
-      if (!getField(
-            line,
-            2,
-            timestamp,
-            sizeof(timestamp)))
+      if (!getField(line, 2, timestamp, sizeof(timestamp)))
         continue;
 
-      int hour =
-        parseHour(
-          timestamp);
+      int hour = parseHour(timestamp);
 
       if (hour < 0)
         continue;
 
-      if (
-        getPartitionFromHour(hour)
-        != partition)
+      uint8_t p = getPartitionFromHour(hour);
+
+      if (p >= MAX_PARTITIONS)
         continue;
 
       char s1buf[4];
       char s2buf[4];
 
-      if (!getField(
-            line,
-            3,
-            s1buf,
-            sizeof(s1buf)))
+      if (!getField(line, 3, s1buf, sizeof(s1buf)))
         continue;
 
-      if (!getField(
-            line,
-            4,
-            s2buf,
-            sizeof(s2buf)))
+      if (!getField(line, 4, s2buf, sizeof(s2buf)))
         continue;
 
-      bool sensor1 =
-        atoi(s1buf);
+      bool isStanding = (atoi(s1buf) && atoi(s2buf));
 
-      bool sensor2 =
-        atoi(s2buf);
+      totalCounts[p]++;
 
-      bool standing =
-        (sensor1 && sensor2);
+      if (isStanding)
+        standingCounts[p]++;
 
-      totalCount++;
-
-      if (standing)
-        standingCount++;
+      // yield every 200 lines so non-SD tasks (LED, buzzer, logger) get
+      // CPU time; SD mutex stays held to keep all file handles valid
+      if (++yieldCtr >= 200) {
+        yieldCtr = 0;
+        vTaskDelay(pdMS_TO_TICKS(1));
+      }
     }
 
     f.close();
   }
 
-  // ==========================================
-  // RESULT
-  // ==========================================
+  giveSDMutex();
 
-  if (totalCount == 0)
-    return false;
+  // Store results for all partitions
+  uint8_t populated = 0;
 
-  baselineRate = (float)standingCount / (float)totalCount;
+  for (int p = 0; p < MAX_PARTITIONS; p++) {
 
-  baselineSamples = totalCount;
+    if (totalCounts[p] == 0)
+      continue;
 
-  return true;
+    precomputed[p].rate    = (float)standingCounts[p] / (float)totalCounts[p];
+    precomputed[p].samples = totalCounts[p];
+    precomputed[p].valid   = true;
+    populated++;
+  }
+
+  logToFile("📊 Baseline recomputed: %u partitions populated", populated);
 }
 
-// INVALID BASELINE CACHE
-void invalidateBaselineCache() {
+// =====================================================
+// GET CACHED BASELINE (RAM read only, zero SD access)
+// =====================================================
 
-  baselineCache.valid = false;
+bool getCachedBaseline(uint8_t partition,
+                       float   &baselineRate,
+                       uint32_t &baselineSamples) {
+
+  if (partition >= MAX_PARTITIONS)
+    return false;
+
+  if (!precomputed[partition].valid)
+    return false;
+
+  baselineRate    = precomputed[partition].rate;
+  baselineSamples = precomputed[partition].samples;
+
+  return true;
 }

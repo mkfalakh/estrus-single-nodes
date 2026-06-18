@@ -16,6 +16,7 @@
 #include "system_state.h"
 #include "csv_writer.h"
 #include "task_manager.h"
+#include "storage_stats.h"
 #include <SPI.h>
 #include <Preferences.h>
 
@@ -45,6 +46,7 @@ void setup() {
 
   if (SYS.sd_ok) {
     setSDReadyForLog(true);
+    triggerBaselineRecompute();
   }
 
   initCSVWriter();
