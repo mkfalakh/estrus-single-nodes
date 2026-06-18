@@ -281,25 +281,6 @@ void handleLogin() {
   server.send(200, "application/json", "{\"success\":true}");
 }
 
-void handleSystemStatus() {
-
-  // if (!isAuthenticated()) {
-  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-  //   return;
-  // }
-
-  String json = "{";
-
-  json += "\"error\":" + String(sysIsSystemFault() ? 1 : 0) + ",";
-  json += "\"sensor_dirty\":" + String(sysIsSensorDirty() ? 1 : 0) + ",";
-  json += "\"low_battery\":" + String(sysIsLowBattery() ? 1 : 0) + ",";
-  json += "\"alarm\":" + String(sysIsAlarm() ? 1 : 0) + ",";
-  json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
-
-  json += "}";
-
-  server.send(200, "application/json", json);
-}
 
 void handleHistory() {
 
@@ -510,8 +491,8 @@ void handleAlarmStatus() {
   json += "\"alarm_estrus\":" + String(SYS.estrus ? "true" : "false") + ",";
   json += "\"alarm_fault\":" + String(isFaultAlarm() ? "true" : "false") + ",";
   json += "\"alarm_fault_muted\":" + String(SYS.fault_alarm_muted ? "true" : "false") + ",";
-  json += "\"alarm_ack\":" + String(isAlarmAcknowledged() ? "true" : "false");
-  json += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? "true" : "false") + ",";
+  json += "\"alarm_ack\":" + String(isAlarmAcknowledged() ? "true" : "false") + ",";
+  json += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? "true" : "false");
 
   json += "}";
 
@@ -1313,7 +1294,10 @@ void handleLatest() {
   json += "\"rtc\":" + String(SYS.rtc_ok ? 1 : 0) + ",";
   json += "\"sensor\":" + String(SYS.sensor_ok ? 1 : 0) + ",";
   json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
-  json += "\"buzzer\":" + String(SYS.alarm_active ? 1 : 0);
+  json += "\"buzzer\":" + String(SYS.alarm_active ? 1 : 0) + ",";
+  json += "\"sensor_dirty\":" + String(sysIsSensorDirty() ? 1 : 0) + ",";
+  json += "\"alarm\":" + String(sysIsAlarm() ? 1 : 0) + ",";
+  json += "\"low_battery\":" + String(sysIsLowBattery() ? 1 : 0);
 
   json += "}";
 
@@ -1481,6 +1465,10 @@ void handleHealth() {
 
   json += "\"low_battery\":";
   json += String(sysIsLowBattery() ? "true" : "false");
+  json += ",";
+
+  json += "\"error\":";
+  json += String(sysIsSystemFault() ? "true" : "false");
 
   json += "}";
 
@@ -1702,6 +1690,7 @@ void initWebServer() {
   ROUTE("/api/node/estrus", HTTP_GET, handleEstrus);    // informasi model estrus
   ROUTE("/api/node/history", HTTP_GET, handleHistory);  // untuk melihat data csv
   ROUTE("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
+  ROUTE("/api/node/device", HTTP_GET, handleDevice);    // identitas device (node_id, mac, firmware)
   ROUTE("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
 
   // RTC | WAKTU DEVICE
@@ -1710,9 +1699,9 @@ void initWebServer() {
   ROUTE("/api/rtc/clear", HTTP_POST, handleRTCClear);  // DEVELOPMENT ONLY | RESET TIME & STATE RTC
 
   // CONFIG
-  ROUTE("/api/config", HTTP_GET, handleGetConfig);          // untuk load config dari esp
-  ROUTE("/api/config", HTTP_POST, handleSetConfig);         // untuk ubah config
-  ROUTE("/api/config/reset", HTTP_GET, handleResetConfig);  // untuk reset config (belum dipakai)
+  ROUTE("/api/config", HTTP_GET, handleGetConfig);           // untuk load config dari esp
+  ROUTE("/api/config", HTTP_POST, handleSetConfig);          // untuk ubah config
+  ROUTE("/api/config/reset", HTTP_POST, handleResetConfig);  // untuk reset config ke default
 
   // CONTROL ALARM
   ROUTE("/api/alarm/status", HTTP_GET, handleAlarmStatus);  // cek status alarm
@@ -1720,8 +1709,7 @@ void initWebServer() {
   ROUTE("/api/alarm/stop", HTTP_POST, handleAlarmStop);     // stop alarm
 
   // SYSTEM
-  ROUTE("/api/system", HTTP_GET, handleSystemStatus);  // untuk cek kondisi device
-  ROUTE("/api/storage", HTTP_GET, handleStorage);      // untuk cek kondisi SDCard
+  ROUTE("/api/storage", HTTP_GET, handleStorage);  // untuk cek kondisi SDCard
 
   ROUTE("/ping", HTTP_GET, []() {
     server.send(200, "text/plain", "OK");
