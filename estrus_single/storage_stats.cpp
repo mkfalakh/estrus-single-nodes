@@ -2,13 +2,14 @@
 #include "config_runtime.h"
 #include "rtc_manager.h"
 #include "system_state.h"
+#include "logger.h"
 #include <SD.h>
 
 #define CSV_BUFFER_SIZE 128
 
 struct BaselineCache {
 
-  uint8_t partition;
+  // uint8_t partition;
   uint8_t day;
   float baseline;
   uint32_t samples;
@@ -17,7 +18,7 @@ struct BaselineCache {
 
 static BaselineCache baselineCache = {
 
-  255,
+  // 255,
   255,
   0,
   0,
@@ -30,13 +31,13 @@ uint32_t csvRowsWritten = 0;
 // PARTITION
 // =====================================================
 
-static uint8_t getPartitionFromHour(uint8_t hour) {
+// static uint8_t getPartitionFromHour(uint8_t hour) {
 
-  if (sysConfig.partition_hours == 0)
-    return 0;
+//   if (sysConfig.partition_hours == 0)
+//     return 0;
 
-  return (hour / sysConfig.partition_hours);
-}
+//   return (hour / sysConfig.partition_hours);
+// }
 
 // =====================================================
 // TIMESTAMP PARSER
@@ -155,11 +156,14 @@ static String getHistoricalFile(int daysAgo) {
   snprintf(
     path,
     sizeof(path),
-    "/data/%s-%04d-%02d-%02d.csv",
-    sysConfig.node_id,
+    "/data/%04d-%02d-%02d.csv",
     d.year(),
     d.month(),
     d.day());
+
+  // logToFile(
+  //   "📂 Historical file: %s",
+  //   path);
 
   return String(path);
 }
@@ -167,71 +171,64 @@ static String getHistoricalFile(int daysAgo) {
 // =====================================================
 // BASELINE
 // =====================================================
+bool loadGlobalBaseline(
+  float &baselineRate,
+  uint32_t &baselineSamples) {
 
-bool loadPartitionBaseline(uint8_t partition,
-                           float &baselineRate,
-                           uint32_t &baselineSamples) {
-
-  baselineRate = 0.0f;
+  baselineRate = 0;
   baselineSamples = 0;
+
   uint32_t standingCount = 0;
   uint32_t totalCount = 0;
 
-  DateTime now = getNow();
-  uint8_t today = now.day();
+  // DEBUG CEK FILE
+  // File dir = SD.open("/data");
 
-  if (baselineCache.valid && baselineCache.partition == partition &&
+  // while (true) {
 
-      baselineCache.day == today) {
-    baselineRate =
-      baselineCache.baseline;
+  //   File f = dir.openNextFile();
 
-    baselineSamples =
-      baselineCache.samples;
+  //   if (!f) break;
 
-    baselineCache.partition =
-      partition;
+  //   logToFile(
+  //     "FOUND FILE: %s",
+  //     f.name());
 
-    baselineCache.day =
-      today;
+  //   f.close();
+  // }
 
-    baselineCache.baseline =
-      baselineRate;
+  // dir.close();
 
-    baselineCache.samples =
-      baselineSamples;
 
-    baselineCache.valid =
-      true;
-
-    return true;
-  }
-
-  // ==========================================
-  // LOOP HISTORICAL FILES
-  // ==========================================
-
-  for (
-    int d = 1;
-    d <= sysConfig.retention_days;
-    d++) {
+  for (int d = 0;
+       d <= sysConfig.retention_days;
+       d++) {
 
     String filename = getHistoricalFile(d);
 
-    if (filename == "")
+    if (d == 0) {
+      filename = "/data/" + todayDateStr() + ".csv";
+    }
+
+    // logToFile("📂 Baseline file: %s", filename.c_str());
+
+    if (filename == "") {
       break;
+    }
 
-    if (!SD.exists(filename))
+    if (!SD.exists(filename)) {
+      // logToFile("⚠️ File not found");
       continue;
+    }
 
-    File f =
-      SD.open(filename);
+    File f = SD.open(filename);
+    logToFile("✅ File record opened");
 
-    if (!f)
+    if (!f) {
       continue;
+    }
 
     // skip header
-
     f.readStringUntil('\n');
 
     char line[CSV_BUFFER_SIZE];
@@ -246,29 +243,13 @@ bool loadPartitionBaseline(uint8_t partition,
 
       line[len] = '\0';
 
-      if (len < 10)
+      // logToFile(
+      //   "CSV: %s",
+      //   line);
+
+      if (len < 10) {
         continue;
-
-      char timestamp[24];
-
-      if (!getField(
-            line,
-            2,
-            timestamp,
-            sizeof(timestamp)))
-        continue;
-
-      int hour =
-        parseHour(
-          timestamp);
-
-      if (hour < 0)
-        continue;
-
-      if (
-        getPartitionFromHour(hour)
-        != partition)
-        continue;
+      }
 
       char s1buf[4];
       char s2buf[4];
@@ -277,15 +258,17 @@ bool loadPartitionBaseline(uint8_t partition,
             line,
             3,
             s1buf,
-            sizeof(s1buf)))
+            sizeof(s1buf))) {
         continue;
+      }
 
       if (!getField(
             line,
             4,
             s2buf,
-            sizeof(s2buf)))
+            sizeof(s2buf))) {
         continue;
+      }
 
       bool sensor1 =
         atoi(s1buf);
@@ -294,30 +277,228 @@ bool loadPartitionBaseline(uint8_t partition,
         atoi(s2buf);
 
       bool standing =
-        (sensor1 && sensor2);
+        (sensor1 || sensor2);
 
       totalCount++;
 
-      if (standing)
+      if (standing) {
         standingCount++;
+      }
     }
 
     f.close();
   }
 
-  // ==========================================
-  // RESULT
-  // ==========================================
+  if (totalCount < sysConfig.min_baseline_samples) {
 
-  if (totalCount == 0)
+    logToFile(
+      "⚠️ total: %lu | min b.samples: %u! lanjut menghitung...",
+
+      totalCount,
+
+      sysConfig.min_baseline_samples);
+
     return false;
+  }
 
-  baselineRate = (float)standingCount / (float)totalCount;
+  baselineRate =
+    (float)standingCount / (float)totalCount;
 
-  baselineSamples = totalCount;
+  baselineSamples =
+    totalCount;
+
+  logToFile(
+    "📊 Standing = %lu | Total = %lu | Base rate = %.2f%%",
+
+    standingCount,
+
+    totalCount,
+
+    baselineRate * 100.0f);
 
   return true;
 }
+
+
+// bool loadPartitionBaseline(uint8_t partition,
+//                            float &baselineRate,
+//                            uint32_t &baselineSamples) {
+
+//   baselineRate = 0.0f;
+//   baselineSamples = 0;
+//   uint32_t standingCount = 0;
+//   uint32_t totalCount = 0;
+
+//   DateTime now = getNow();
+//   uint8_t today = now.day();
+
+//   if (baselineCache.valid && baselineCache.partition == partition &&
+
+//       baselineCache.day == today) {
+//     baselineRate =
+//       baselineCache.baseline;
+
+//     baselineSamples =
+//       baselineCache.samples;
+
+//     return true;
+//   }
+
+//   // ==========================================
+//   // LOOP HISTORICAL FILES
+//   // ==========================================
+
+//   for (
+//     int d = 1;
+//     d <= sysConfig.retention_days;
+//     d++) {
+
+//     String filename = getHistoricalFile(d);
+
+//     logToFile(
+//       "📂 Baseline check: %s",
+//       filename.c_str());
+
+//     if (filename == "")
+//       break;
+
+//     if (!SD.exists(filename)) {
+
+//       continue;
+//     }
+
+//     File f =
+//       SD.open(filename);
+
+//     if (!f)
+//       continue;
+
+//     // skip header
+
+//     f.readStringUntil('\n');
+
+//     char line[CSV_BUFFER_SIZE];
+
+//     while (f.available()) {
+
+//       size_t len =
+//         f.readBytesUntil(
+//           '\n',
+//           line,
+//           sizeof(line) - 1);
+
+//       line[len] = '\0';
+
+//       if (len < 10)
+//         continue;
+
+//       char timestamp[24];
+
+//       if (!getField(
+//             line,
+//             2,
+//             timestamp,
+//             sizeof(timestamp)))
+//         continue;
+
+//       int hour =
+//         parseHour(
+//           timestamp);
+
+//       if (hour < 0)
+//         continue;
+
+//       uint8_t filePartition =
+//         getPartitionFromHour(hour);
+
+//       if (filePartition != partition) {
+
+//         continue;
+//       }
+
+//       char s1buf[4];
+//       char s2buf[4];
+
+//       if (!getField(
+//             line,
+//             3,
+//             s1buf,
+//             sizeof(s1buf)))
+//         continue;
+
+//       if (!getField(
+//             line,
+//             4,
+//             s2buf,
+//             sizeof(s2buf)))
+//         continue;
+
+//       bool sensor1 =
+//         atoi(s1buf);
+
+//       bool sensor2 =
+//         atoi(s2buf);
+
+//       bool standing =
+//         (sensor1 || sensor2);
+
+//       totalCount++;
+
+//       if (standing)
+//         standingCount++;
+//     }
+
+//     f.close();
+//   }
+
+//   // ==========================================
+//   // RESULT
+//   // ==========================================
+
+//   logToFile(
+//     "📊 Baseline partition=%u standing=%lu total=%lu",
+
+//     partition,
+
+//     standingCount,
+
+//     totalCount);
+
+//   if (totalCount < sysConfig.min_baseline_samples) {
+
+//     logToFile(
+//       "⚠️ Baseline insufficient samples: %lu/%u",
+
+//       totalCount,
+
+//       sysConfig.min_baseline_samples);
+
+//     return false;
+//   }
+
+//   baselineRate =
+//     (float)standingCount / (float)totalCount;
+
+//   baselineSamples =
+//     totalCount;
+
+//   baselineCache.partition =
+//     partition;
+
+//   baselineCache.day =
+//     today;
+
+//   baselineCache.baseline =
+//     baselineRate;
+
+//   baselineCache.samples =
+//     baselineSamples;
+
+//   baselineCache.valid =
+//     true;
+
+//   return true;
+// }
 
 // INVALID BASELINE CACHE
 void invalidateBaselineCache() {
