@@ -77,7 +77,7 @@ bool initSDCard() {
 
     sysSetSD(false);
 
-    giveSDMutex();
+    // giveSDMutex();
 
     return false;
   }
@@ -153,31 +153,4 @@ bool remountSDCard() {
   sysSetSD(false);
 
   return false;
-}
-
-// task SDCard Monitoring setiap 5 detik
-void sdMonitorTask(void* pv) {
-
-  while (true) {
-
-    Serial.println("[SDMON] loop");
-
-    Serial.printf(
-      "[SDMON] sd_ok=%d\n",
-      SYS.sd_ok);
-
-    if (!SYS.sd_ok) {
-
-      Serial.println(
-        "[SDMON] mencoba remount sdcard...");
-
-      remountSDCard();
-
-      vTaskDelay(pdMS_TO_TICKS(5000));
-
-      continue;
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(5000));
-  }
 }
