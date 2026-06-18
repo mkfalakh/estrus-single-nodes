@@ -11,6 +11,8 @@ enum BuzzerPattern {
 
   BUZZER_DOUBLE_CLICK,
 
+  BUZZER_LONG_PRESS,
+
   BUZZER_STOP_CONFIRM
 };
 
