@@ -12,4 +12,5 @@ void giveSDMutex();
 void createSDMutex();
 bool initSDCard();
 void checkFreeSD();
-void sdMonitorTask(void* pv);
+
+bool remountSDCard();
