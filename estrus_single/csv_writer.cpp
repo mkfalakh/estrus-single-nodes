@@ -186,6 +186,7 @@ void csvWriterTask(void *pv) {
 
   static uint8_t lastDay = 0;
   static bool csvPaused = false;
+  static bool csvCounterInitialized = false;
 
   while (true) {
 
@@ -207,9 +208,11 @@ void csvWriterTask(void *pv) {
 
     DateTime now = getNow();
 
-    if (lastDay == 255) {
+    if (!csvCounterInitialized) {
 
       lastDay = now.day();
+
+      csvCounterInitialized = true;
 
     } else if (lastDay != now.day()) {
 
@@ -220,6 +223,8 @@ void csvWriterTask(void *pv) {
       logToFile(
         "📄 CSV counter reset");
     }
+
+    csvCounterInitialized = false;
 
     SensorData incoming;
 

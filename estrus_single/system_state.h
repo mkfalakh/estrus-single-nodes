@@ -53,6 +53,8 @@ typedef struct {
   // --- rtc ---
   bool rtc_ever_synced;
   int32_t rtc_drift_seconds;
+  uint32_t last_synced_epoch;
+  uint32_t last_sync_millis;
 
 } SystemState;
 

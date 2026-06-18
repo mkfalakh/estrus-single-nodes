@@ -9,8 +9,6 @@
 #include "logger.h"
 #include <Arduino.h>
 
-#define BUTTON_DEBOUNCE_MS 100
-
 void initButton() {
   pinMode(BUZZER_BUTTON_PIN, INPUT_PULLUP);
 }
@@ -66,8 +64,7 @@ static void handleButtonEvent(ButtonEvent event) {
 
       sysTriggerWifiWake();
 
-      buzzerPlay(
-        BUZZER_DOUBLE_CLICK);
+      buzzerPlay(BUZZER_DOUBLE_CLICK);
 
       Serial.println(
         "📡 WiFi wake by button");
@@ -79,14 +76,16 @@ static void handleButtonEvent(ButtonEvent event) {
     // =========================
     case BTN_LONG_PRESS:
 
-      Serial.println(
-        "⚠️ LONG PRESS");
+      Serial.println("⚠️ LONG PRESS");
 
-      Serial.println(
-        "⚠️ Long press detected");
+      if (!sysIsSystemFault()) {
 
-      // reserved:
-      // factory reset nanti
+        resetConfig();
+
+        Serial.println("⚠️ Config reset!");
+
+        buzzerPlay(BUZZER_LONG_PRESS);
+      }
 
       break;
 
@@ -110,9 +109,9 @@ ButtonEvent getButtonEvent() {
 
   static bool longHandled = false;
 
-  const unsigned long DEBOUNCE_MS = 50;
+  const unsigned long DEBOUNCE_MS = 100;
   const unsigned long DOUBLE_MS = 700;
-  const unsigned long LONG_MS = 5000;
+  const unsigned long LONG_MS = 8000;
 
   unsigned long now = millis();
 

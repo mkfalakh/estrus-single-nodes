@@ -1,6 +1,6 @@
 #include "esp32-hal-gpio.h"
 #include "sens_proximity.h"
-#include "ina226.h"
+#include "ina_manager.h"
 #include "config.h"
 #include "config_runtime.h"
 #include "logger.h"
@@ -229,8 +229,7 @@ void sensorTask(void *pv) {
 
         t = getNow();
 
-        rtcValid =
-          (t.year() >= 2026);
+        rtcValid = (t.year() >= 2026);
 
         if (!rtcValid && millis() - lastRtcLog >= 60000) {
 
@@ -252,7 +251,9 @@ void sensorTask(void *pv) {
         checkTimeTransitions();
 
         // Standing Stats
-        updatePartitionStats(standing);
+        updateGlobalStats(standing);
+
+        // updatePartitionStats(standing);
 
         // Evaluate Estrus
         result = evaluateEstrus();

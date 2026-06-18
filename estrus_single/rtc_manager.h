@@ -13,3 +13,8 @@ void resetRTC(); // reset rtc | DEVELOPMENT ONLY
 
 void saveRTCSyncState(bool synced);
 bool loadRTCSyncState();
+
+void saveRTCEpoch(uint32_t epoch);
+uint32_t loadRTCEpoch();
+
+bool checkRTCHealth();

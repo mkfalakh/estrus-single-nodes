@@ -33,7 +33,9 @@ SystemState SYS = {
   .last_alarm_ts = 0,
 
   .rtc_ever_synced = false,
-  .rtc_drift_seconds = 0
+  .rtc_drift_seconds = 0,
+  .last_synced_epoch = 0,
+  .last_sync_millis = 0
 };
 
 static bool lastEstrus = false;
@@ -82,8 +84,8 @@ void sysSetEstrusResult(
   SYS.deviation_pct =
     r.deviation_pct;
 
-  SYS.partition =
-    r.partition;
+  // SYS.partition =
+  //   r.partition;
 
   SYS.baseline_samples =
     r.baseline_samples;

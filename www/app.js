@@ -579,25 +579,23 @@ function validateRange(id, min, max) {
 }
 
 function validateConfig() {
-  let ok = true;
-  ok &= validateNodeId();
-  ok &= validateAnimalId();
-  // ok &= validatePasswordAP();
-  ok &= validateRange("recordInterval", 10, 3600);
-  ok &= validateRange("retentionDays", 1, 14);
-  const ph = parseInt(document.getElementById("partitionHours")?.value || 0);
-  if (Number.isInteger(ph) && 24 % ph !== 0) {
-    showError(document.getElementById("partitionHours"), "Must divide 24");
-    ok = false;
-  } else {
-    clearError(document.getElementById("partitionHours"));
-  }
-  ok &= validateRange("estrusThreshold", 0, 100);
-  ok &= validateRange("baselineSamples", 10, 1000);
-  ok &= validateRange("dirtySamples", 10, 1000);
-  ok &= validateRange("currentThreshold", 100, 150);
-  ok &= validateRange("powerThreshold", 400, 600);
-  return !!ok;
+  console.log("node", validateNodeId());
+
+  console.log("animal", validateAnimalId());
+
+  console.log("record", validateRange("recordInterval", 10, 3600));
+
+  console.log("retain", validateRange("retentionDays", 1, 14));
+
+  console.log("baseline", validateRange("baselineSamples", 10, 1000));
+
+  console.log("dirty", validateRange("dirtySamples", 10, 1000));
+
+  console.log("current", validateRange("currentThreshold", 100, 150));
+
+  console.log("power", validateRange("powerThreshold", 400, 600));
+
+  return true;
 }
 
 // SAVE CONFIG
@@ -606,73 +604,87 @@ async function saveConfig() {
 
   if (!validateConfig()) {
     showToast("Invalid configuration", "error");
+
     return;
   }
+
   try {
-    const params = new URLSearchParams();
-    // DEVICE
+    btnSave.disabled = true;
+
     const nodeId = (document.getElementById("nodeId")?.value || "").trim();
+
     const animalId = (document.getElementById("animalId")?.value || "").trim();
-    if (nodeId) params.append("node_id", nodeId);
-    if (animalId) params.append("animal_id", animalId);
-    params.append(
-      "ap_password",
-      document.getElementById("apPassword")?.value || "estrus123",
-    );
-    params.append("prox_low", document.getElementById("proxLow")?.value || 0);
-    params.append(
-      "alarm_enabled",
-      document.getElementById("alarmEnabled")?.value || 0,
-    );
-    // ESTRUS
-    params.append(
-      "record_interval_sec",
-      document.getElementById("recordInterval")?.value || 30,
-    );
-    params.append(
-      "retention_days",
-      document.getElementById("retentionDays")?.value || 3,
-    );
-    params.append(
-      "partition_hours",
-      document.getElementById("partitionHours")?.value || 3,
-    );
-    params.append(
-      "estrus_threshold_pct",
-      document.getElementById("estrusThreshold")?.value || 6,
-    );
-    params.append(
-      "stop_after_alarm",
-      document.getElementById("stopAfterAlarm")?.value || 0,
-    );
-    params.append(
-      "min_baseline_samples",
-      document.getElementById("baselineSamples")?.value || 300,
-    );
-    params.append(
-      "dirty_timeout_samples",
-      document.getElementById("dirtySamples")?.value || 240,
-    );
-    // BATTERY
-    params.append(
-      "current_threshold",
-      document.getElementById("currentThreshold")?.value || 120,
-    );
-    params.append(
-      "power_threshold",
-      document.getElementById("powerThreshold")?.value || 500,
-    );
 
-    const res = await apiJson("/api/config", { method: "POST", body: params });
+    const payload = {
+      // DEVICE
+      node_id: nodeId,
+      animal_id: animalId,
+      ap_password: document.getElementById("apPassword")?.value || "estrus123",
 
-    if (res && res.success) {
-      console.log("Config saved:", res);
+      prox_low: Number(document.getElementById("proxLow")?.value || 0),
 
+      alarm_enabled: Number(
+        document.getElementById("alarmEnabled")?.value || 0,
+      ),
+
+      // ESTRUS
+      record_interval_sec: Number(
+        document.getElementById("recordInterval")?.value || 10,
+      ),
+
+      retention_days: Number(
+        document.getElementById("retentionDays")?.value || 7,
+      ),
+
+      partition_hours: Number(
+        document.getElementById("partitionHours")?.value || 3,
+      ),
+
+      estrus_threshold_pct: Number(
+        document.getElementById("estrusThreshold")?.value || 6,
+      ),
+
+      stop_after_alarm: Number(
+        document.getElementById("stopAfterAlarm")?.value || 0,
+      ),
+
+      min_baseline_samples: Number(
+        document.getElementById("baselineSamples")?.value || 10,
+      ),
+
+      dirty_timeout_samples: Number(
+        document.getElementById("dirtySamples")?.value || 240,
+      ),
+
+      // BATTERY
+      current_threshold: Number(
+        document.getElementById("currentThreshold")?.value || 120,
+      ),
+
+      power_threshold: Number(
+        document.getElementById("powerThreshold")?.value || 500,
+      ),
+    };
+
+    console.log("Saving config:", payload);
+
+    const res = await apiJson("/api/config", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (res?.success) {
       showToast("Konfigurasi tersimpan", "success");
+
       if (res.restart) {
-        showToast("Perangkat akan restart karena perubahan konfigurasi.");
+        showToast("Perangkat akan restart karena perubahan konfigurasi");
       }
+
       await loadConfig();
+
       return;
     }
 
@@ -681,6 +693,8 @@ async function saveConfig() {
     console.error(err);
 
     showToast("Gagal menyimpan konfigurasi", "error");
+  } finally {
+    btnSave.disabled = false;
   }
 }
 

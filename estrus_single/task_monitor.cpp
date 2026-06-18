@@ -22,7 +22,7 @@ static void printTask(
     stack);
 
   // warning low stack
-  if (stack < 300) {
+  if (stack < 500) {
 
     logToFile(
       "⚠️ LOW STACK: %s = %u",
@@ -78,8 +78,8 @@ void watchdogTask(void* pv) {
       cleanupStorageTaskHandle);
 
     printTask(
-      "SDMonitor",
-      sdMonitorTaskHandle);
+      "HealthMonitor",
+      healthMonitorTaskHandle);
 
     // Serial.printf(
     //   "Heap:%u | PSRAM:%u\n",

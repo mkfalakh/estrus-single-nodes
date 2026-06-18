@@ -9,7 +9,7 @@
 #include "sens_proximity.h"
 #include "storage_cleanup.h"
 #include "web_server.h"
-#include "sd_manager.h"
+#include "health_monitor.h"
 
 TaskHandle_t sensorTaskHandle = NULL;
 TaskHandle_t csvTaskHandle = NULL;
@@ -20,7 +20,7 @@ TaskHandle_t buttonTaskHandle = NULL;
 TaskHandle_t wifiTaskHandle = NULL;
 TaskHandle_t webServerTaskHandle = NULL;
 TaskHandle_t cleanupStorageTaskHandle = NULL;
-TaskHandle_t sdMonitorTaskHandle = NULL;
+TaskHandle_t healthMonitorTaskHandle = NULL;
 
 TaskHandle_t watchdogTaskHandle = NULL;
 
@@ -30,15 +30,15 @@ TaskHandle_t watchdogTaskHandle = NULL;
 void startTasks() {
 
   // =====================================
-  // SDCard MONITORING
+  // HEALTH SYSTEM MONITORING
   // =====================================
   xTaskCreatePinnedToCore(
-    sdMonitorTask,
-    "SDMonitor",
-    4096,
+    healthMonitorTask,
+    "Health",
+    8192,
     NULL,
     3,
-    &sdMonitorTaskHandle,
+    &healthMonitorTaskHandle,
     1);
 
   // =====================================
@@ -133,7 +133,7 @@ void startTasks() {
     "WEB",
     8192,
     nullptr,
-    2,
+    1,
     &webServerTaskHandle,
     1);
 
