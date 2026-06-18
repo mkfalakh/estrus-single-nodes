@@ -331,6 +331,16 @@ void handleHistory() {
     return;
   }
 
+  if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
+
+    server.send(
+      503,
+      "application/json",
+      "{\"error\":\"sd_busy\"}");
+
+    return;
+  }
+
   File file = SD.open(filename);
 
   if (!file) {
@@ -395,12 +405,14 @@ void handleHistory() {
 
     logToFile("❌ [history] malloc failed, limit=" + String(limit));
 
+    file.close();
+
+    giveSDMutex();
+
     server.send(
       500,
       "application/json",
       "{\"error\":\"oom\"}");
-
-    file.close();
 
     return;
   }
@@ -418,6 +430,8 @@ void handleHistory() {
       hasNext);
 
   file.close();
+
+  giveSDMutex();
 
   logToFile("✅ [history] date=" + date + " page=" + String(page) + " limit=" + String(limit) + " count=" + String(count) + " hasNext=" + String(hasNext ? "true" : "false"));
 
@@ -551,6 +565,12 @@ void handleDownload() {
 
   // String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
 
+  if (!takeSDMutex("DOWNLOAD", pdMS_TO_TICKS(3000))) {
+
+    server.send(503, "text/plain", "SD busy");
+    return;
+  }
+
   File file = SD.open(filename);
 
   if (!file) {
@@ -570,6 +590,8 @@ void handleDownload() {
 
   server.streamFile(file, "text/csv");
   file.close();
+
+  giveSDMutex();
 }
 
 // ===== GET CONFIG DARI MEMORY ESP =====

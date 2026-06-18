@@ -126,14 +126,15 @@ void startTasks() {
     0);
 
   // =====================================
-  // WEB SERVER — core 1, biar IDLE0 tidak starve saat handleHistory SD read
+  // WEB SERVER — core 1, prio 1 agar Sensor (prio 2) tidak terpreempt saat
+  // handleHistory/handleDownload membaca SD byte-per-byte
   // =====================================
   xTaskCreatePinnedToCore(
     webServerTask,
     "WEB",
     8192,
     nullptr,
-    2,
+    1,
     &webServerTaskHandle,
     1);
 
