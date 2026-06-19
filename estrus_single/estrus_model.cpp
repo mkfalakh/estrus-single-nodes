@@ -5,241 +5,135 @@
 #include "storage_stats.h"
 #include "logger.h"
 
-// #define MAX_PARTITIONS 24
+#define MAX_PARTITIONS 24
 
-// static PartitionStats partitionStats[MAX_PARTITIONS];
-// static uint8_t lastPartition = 255;
+static PartitionStats partitionStats[MAX_PARTITIONS];
+static uint8_t lastPartition = 255;
 static uint8_t lastDay = 255;
 
-static GlobalStats stats;
+static uint8_t getPartitionIndex() {
 
-// helper
-void resetGlobalStats() {
+  DateTime now = getNow();
 
-  stats.standing = 0;
-  stats.total = 0;
-
-  invalidateBaselineCache();
-
-  logToFile(
-    "📊 Global stats reset");
+  return now.hour() / sysConfig.partition_hours;
 }
-
-// static void resetPartitionRuntime() {
-
-//   memset(
-//     partitionStats,
-//     0,
-//     sizeof(partitionStats));
-
-//   lastPartition = 255;
-//   lastDay = 255;
-
-//   invalidateBaselineCache();
-
-//   logToFile(
-//     "📊 Partition runtime reset");
-// }
-
-// static uint8_t getPartitionIndex() {
-
-//   DateTime now = getNow();
-
-//   return now.hour() / sysConfig.partition_hours;
-// }
 
 // ======================================
 // RESET STANDING
 // ======================================
 
-// void resetRuntimePartitionStats(uint8_t partition) {
+void resetRuntimePartitionStats(uint8_t partition) {
 
-//   // uint8_t partition = getPartitionIndex();
+  // uint8_t partition = getPartitionIndex();
 
-//   if (partition >= MAX_PARTITIONS) {
-//     return;
-//   }
+  if (partition >= MAX_PARTITIONS) {
+    return;
+  }
 
-//   partitionStats[partition].standing = 0;
-//   partitionStats[partition].total = 0;
+  partitionStats[partition].standing = 0;
+  partitionStats[partition].total = 0;
 
-//   logToFile(
-//     "📊 Partition %u runtime stats reset",
-//     partition);
-// }
+  logToFile(
+    "📊 Partition %u runtime stats reset",
+    partition);
+}
 
 
 // ======================================
 // ACCESSOR
 // ======================================
 
-// PartitionStats *getRuntimePartitionStats() {
+PartitionStats *getRuntimePartitionStats() {
 
-//   return partitionStats;
-// }
+  return partitionStats;
+}
 
 
 // ======================================
-// UPDATE CURRENT TRANSITIONS
+// UPDATE CURRENT PARTITION
 // ======================================
 
-// MENGELOLA PERGANTIAN WAKTU TRANSISI
+// MENGELOLA PERGANTIAN PARTITION
 void checkTimeTransitions() {
 
   if (!SYS.rtc_ok) {
-    logToFile("RTC invalid! gagal cek transisi");
+    logToFile("RTC unknown! gagal cek partition!");
     return;
   }
 
-  uint8_t today =
-    getNow().day();
+  if (sysConfig.partition_hours == 0) {
+    logToFile("Partition tidak boleh 0! gagal cek partition!");
+    return;
+  }
 
-  if (lastDay == 255) {
+  DateTime now = getNow();
 
-    lastDay = today;
+  uint8_t newDay = now.day();
+
+  uint8_t newPartition =
+    now.hour() / sysConfig.partition_hours;
+
+  // pertama kali boot
+  if (lastPartition == 255) {
+
+    lastPartition = newPartition;
+    lastDay = newDay;
 
     return;
   }
 
-  if (today != lastDay) {
+  // ======================
+  // DAY TRANSITION
+  // ======================
+  if (lastDay != 255 && newDay != lastDay) {
 
-    resetGlobalStats();
+    triggerBaselineRecompute();
 
     resetAlarmAcknowledgement();
 
-    lastDay = today;
+    logToFile(
+      "📅 New day → baseline recomputed");
+  }
+
+  // ======================
+  // PARTITION TRANSITION
+  // ======================
+  if (lastPartition != 255 && newPartition != lastPartition) {
+
+    resetRuntimePartitionStats(newPartition);
 
     logToFile(
-      "📅 New day");
+      "🕒 Partition %u → %u",
+      lastPartition,
+      newPartition);
   }
+
+  lastDay = newDay;
+  lastPartition = newPartition;
 }
-
-// void checkTimeTransitions() {
-
-//   if (!SYS.rtc_ok) {
-//     logToFile("RTC unknown! gagal cek partition!");
-//     return;
-//   }
-
-//   if (sysConfig.partition_hours == 0) {
-//     logToFile("Partition tidak boleh 0! gagal cek partition!");
-//     return;
-//   }
-
-//   static uint8_t lastPartitionHours = 0;
-
-//   if (lastPartitionHours == 0) {
-
-//     lastPartitionHours =
-//       sysConfig.partition_hours;
-
-//   } else if (
-//     lastPartitionHours != sysConfig.partition_hours) {
-
-//     logToFile(
-//       "📊 Partition config changed %u -> %u",
-
-//       lastPartitionHours,
-//       sysConfig.partition_hours);
-
-//     resetPartitionRuntime();
-
-//     lastPartitionHours =
-//       sysConfig.partition_hours;
-
-//     return;
-//   }
-
-//   DateTime now = getNow();
-
-//   uint8_t newDay = now.day();
-
-//   uint8_t newPartition =
-//     now.hour() / sysConfig.partition_hours;
-
-//   // pertama kali boot
-//   if (lastPartition == 255) {
-
-//     lastPartition = newPartition;
-//     lastDay = newDay;
-
-//     return;
-//   }
-
-//   // ======================
-//   // DAY TRANSITION
-//   // ======================
-//   if (lastDay != 255 && newDay != lastDay) {
-
-//     invalidateBaselineCache();
-
-//     resetAlarmAcknowledgement();
-
-//     logToFile(
-//       "📅 New day → baseline cache reset");
-//   }
-
-//   // ======================
-//   // PARTITION TRANSITION
-//   // ======================
-//   if (lastPartition != 255 && newPartition != lastPartition) {
-
-//     resetRuntimePartitionStats(newPartition);
-
-//     logToFile(
-//       "🕒 Partition last: %u → now: %u",
-//       lastPartition,
-//       newPartition);
-//   }
-
-//   lastDay = newDay;
-//   lastPartition = newPartition;
-// }
 
 
 // MENGHITUNG STANDING STATS
-void updateGlobalStats(bool standing) {
+void updatePartitionStats(bool standing) {
 
-  if (standing) {
-    stats.standing++;
+  uint8_t p = getPartitionIndex();
+
+  if (p >= MAX_PARTITIONS) {
+    return;
   }
 
-  stats.total++;
+  if (standing) {
+    partitionStats[p].standing++;
+  }
+
+  partitionStats[p].total++;
 }
-
-// void updatePartitionStats(bool standing) {
-
-//   static uint32_t dbg = 0;
-
-//   uint8_t p = getPartitionIndex();
-
-//   if (++dbg % 100 == 0) {
-
-//     logToFile(
-//       "Partition %u | standing=%lu | total=%lu",
-
-//       p,
-
-//       partitionStats[p].standing,
-
-//       partitionStats[p].total);
-//   }
-
-//   if (p >= MAX_PARTITIONS) {
-//     return;
-//   }
-
-//   if (standing) {
-//     partitionStats[p].standing++;
-//   }
-
-//   partitionStats[p].total++;
-// }
 
 
 // ======================================
 // MAIN EVALUATION
 // ======================================
+
 EstrusResult evaluateEstrus() {
 
   EstrusResult r;
@@ -249,22 +143,39 @@ EstrusResult evaluateEstrus() {
     0,
     sizeof(r));
 
-  if (stats.total == 0) {
+  uint8_t p =
+    getPartitionIndex();
+
+  r.partition = p;
+
+  if (p >= MAX_PARTITIONS)
     return r;
-  }
+
+  PartitionStats &s =
+    partitionStats[p];
+
+  if (s.total == 0)
+    return r;
+
+  // -----------------------------
+  // current rate
+  // -----------------------------
 
   r.current_rate =
-    (float)stats.standing / (float)stats.total;
+    (float)s.standing / (float)s.total;
 
-  float baselineRate = 0;
-  uint32_t baselineSamples = 0;
+  // -----------------------------
+  // baseline
+  // -----------------------------
 
-  if (!loadGlobalBaseline(
+  float baselineRate;
+
+  uint32_t baselineSamples;
+
+  if (!getCachedBaseline(
+        p,
         baselineRate,
         baselineSamples)) {
-
-    logToFile(
-      "❌ Baseline load failed");
 
     return r;
   }
@@ -275,20 +186,42 @@ EstrusResult evaluateEstrus() {
   r.baseline_samples =
     baselineSamples;
 
-  if (baselineSamples < sysConfig.min_baseline_samples) {
+  // -----------------------------
+  // baseline guard
+  // -----------------------------
+
+  if (
+    baselineSamples < sysConfig.min_baseline_samples) {
+
+    r.valid = false;
 
     return r;
   }
 
-  if (baselineRate <= 0.0001f) {
+  // -----------------------------
+  // avoid divide by zero
+  // -----------------------------
+
+  if (
+    baselineRate <= 0.0001f) {
+
+    r.valid = false;
 
     return r;
   }
+
+  // -----------------------------
+  // deviation %
+  // -----------------------------
 
   r.deviation_pct =
-    ((r.current_rate - baselineRate)
-     / baselineRate)
+    (r.current_rate - baselineRate)
+    / baselineRate
     * 100.0f;
+
+  // -----------------------------
+  // estrus decision
+  // -----------------------------
 
   r.estrus =
     (r.deviation_pct >= sysConfig.estrus_threshold_pct);
@@ -297,130 +230,3 @@ EstrusResult evaluateEstrus() {
 
   return r;
 }
-
-
-// EstrusResult evaluateEstrus() {
-
-//   EstrusResult r;
-
-//   memset(
-//     &r,
-//     0,
-//     sizeof(r));
-
-//   uint8_t p =
-//     getPartitionIndex();
-
-//   logToFile(
-//     "ESTRUS CONFIG partition=%u partition_hours=%u retention=%u threshold=%.2f",
-
-//     p,
-
-//     sysConfig.partition_hours,
-
-//     sysConfig.retention_days,
-
-//     sysConfig.estrus_threshold_pct);
-
-//   r.partition = p;
-
-//   if (sysConfig.partition_hours == 0) {
-
-//     logToFile(
-//       "❌ partition_hours invalid");
-
-//     return r;
-//   }
-
-//   if (p >= MAX_PARTITIONS) {
-
-//     logToFile(
-//       "❌ partition overflow p=%u",
-//       p);
-
-//     return r;
-//   }
-
-//   PartitionStats &s =
-//     partitionStats[p];
-
-//   if (s.total == 0)
-//     return r;
-
-//   // -----------------------------
-//   // current rate
-//   // -----------------------------
-
-//   r.current_rate =
-//     (float)s.standing / (float)s.total;
-
-//   // -----------------------------
-//   // baseline
-//   // -----------------------------
-
-//   float baselineRate;
-
-//   uint32_t baselineSamples;
-
-//   if (!loadPartitionBaseline(
-//         p,
-//         baselineRate,
-//         baselineSamples)) {
-
-//     logToFile(
-//       "❌ Baseline load failed! p=%u",
-//       p);
-
-//     return r;
-//   }
-
-//   r.baseline_rate =
-//     baselineRate;
-
-//   r.baseline_samples =
-//     baselineSamples;
-
-//   // -----------------------------
-//   // baseline guard
-//   // -----------------------------
-
-//   if (
-//     baselineSamples < sysConfig.min_baseline_samples) {
-
-//     r.valid = false;
-
-//     return r;
-//   }
-
-//   // -----------------------------
-//   // avoid divide by zero
-//   // -----------------------------
-
-//   if (
-//     baselineRate <= 0.0001f) {
-
-//     r.valid = false;
-
-//     return r;
-//   }
-
-//   // -----------------------------
-//   // deviation %
-//   // -----------------------------
-
-//   r.deviation_pct =
-//     (r.current_rate - baselineRate)
-//     / baselineRate
-//     * 100.0f;
-
-//   // -----------------------------
-//   // estrus decision
-//   // -----------------------------
-
-//   r.estrus =
-//     (r.deviation_pct >= sysConfig.estrus_threshold_pct);
-
-//   r.valid = true;
-
-//   return r;
-// }

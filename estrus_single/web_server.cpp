@@ -281,25 +281,6 @@ void handleLogin() {
   server.send(200, "application/json", "{\"success\":true}");
 }
 
-void handleSystemStatus() {
-
-  // if (!isAuthenticated()) {
-  //   server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
-  //   return;
-  // }
-
-  String json = "{";
-
-  json += "\"error\":" + String(sysIsSystemFault() ? 1 : 0) + ",";
-  json += "\"sensor_dirty\":" + String(sysIsSensorDirty() ? 1 : 0) + ",";
-  json += "\"low_battery\":" + String(sysIsLowBattery() ? 1 : 0) + ",";
-  json += "\"alarm\":" + String(sysIsAlarm() ? 1 : 0) + ",";
-  json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
-
-  json += "}";
-
-  server.send(200, "application/json", json);
-}
 
 void handleHistory() {
 
@@ -331,16 +312,6 @@ void handleHistory() {
     return;
   }
 
-  if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
-
-    server.send(
-      503,
-      "application/json",
-      "{\"error\":\"sd_busy\"}");
-
-    return;
-  }
-
   int page = 0;
   int limit = DEFAULT_LIMIT;
 
@@ -356,6 +327,16 @@ void handleHistory() {
       200,
       "application/json",
       "{\"date\":\"" + date + "\",\"rows\":[],\"has_next\":false}");
+
+    return;
+  }
+
+  if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
+
+    server.send(
+      503,
+      "application/json",
+      "{\"error\":\"sd_busy\"}");
 
     return;
   }
@@ -524,8 +505,8 @@ void handleAlarmStatus() {
   json += "\"alarm_estrus\":" + String(SYS.estrus ? "true" : "false") + ",";
   json += "\"alarm_fault\":" + String(isFaultAlarm() ? "true" : "false") + ",";
   json += "\"alarm_fault_muted\":" + String(SYS.fault_alarm_muted ? "true" : "false") + ",";
-  json += "\"alarm_ack\":" + String(isAlarmAcknowledged() ? "true" : "false");
-  json += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? "true" : "false") + ",";
+  json += "\"alarm_ack\":" + String(isAlarmAcknowledged() ? "true" : "false") + ",";
+  json += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? "true" : "false");
 
   json += "}";
 
@@ -567,49 +548,140 @@ void handleAlarmStart() {
 }
 
 // ===== HANDLE DOWNLOAD BUTTON =====
+
+// Returns true if columns 0 (device_id) and 1 (animal_id) match sysConfig.
+static bool matchesDeviceFilter(const char *line) {
+  const char *p = line;
+  const char *d0 = p;
+  while (*p && *p != ',') p++;
+  int d0len = p - d0;
+  if (!*p) return false;
+  p++;
+  const char *d1 = p;
+  while (*p && *p != ',') p++;
+  int d1len = p - d1;
+
+  int nlen = strlen(sysConfig.node_id);
+  int alen = strlen(sysConfig.animal_id);
+
+  if (nlen > 0 && (d0len != nlen || strncmp(d0, sysConfig.node_id, nlen) != 0)) return false;
+  if (alen > 0 && (d1len != alen || strncmp(d1, sysConfig.animal_id, alen) != 0)) return false;
+  return true;
+}
+
+// Extract "YYYY-MM-DD HH:MM" minute-key from a CSV line.
+// CSV format: device_id,animal_id,YYYY-MM-DD HH:MM:SS,...
+static bool extractMinuteKey(const char *line, char out[17]) {
+  int commas = 0;
+  int i = 0;
+  while (line[i] && commas < 2) {
+    if (line[i] == ',') commas++;
+    i++;
+  }
+  if (strlen(line + i) < 16) return false;
+  memcpy(out, line + i, 16);
+  out[16] = '\0';
+  return true;
+}
+
+// Streams all CSV files within the configured retention window,
+// filtered to the latest record per minute (chronological, oldest first).
+// No ?date= param needed — uses RTC now and sysConfig.retention_days.
 void handleDownload() {
 
-  // if (!isAuthenticated()) {
-  //   server.send(401, "text/plain", "Unauthorized");
-  //   return;
-  // }
-
-  if (!server.hasArg("date")) {
-    server.send(400, "text/plain", "Missing date");
+  if (!SYS.rtc_ok) {
+    server.send(503, "text/plain", "RTC not ready");
     return;
   }
 
-  String date = server.arg("date");
-  String filename = "/data/" + date + ".csv";
-
-  // String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
-
-  if (!takeSDMutex("DOWNLOAD", pdMS_TO_TICKS(3000))) {
-
-    server.send(503, "text/plain", "SD busy");
+  if (!SYS.sd_ok) {
+    server.send(503, "text/plain", "SD not available");
     return;
   }
 
-  File file = SD.open(filename);
+  DateTime now = getNow();
 
-  if (!file) {
+  String csvName = String(sysConfig.node_id) + "-retention.csv";
 
-    sysSetSD(false);
+  server.sendHeader("Content-Disposition", "attachment; filename=" + csvName);
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/csv", "");
 
+  server.sendContent(
+    "device_id,animal_id,timestamp,sensor1_state,sensor2_state,"
+    "sensor1_dirty,sensor2_dirty,deviation,estrus,voltage,current,battery_pct\r\n");
+
+  char lineBuf[160];
+  char prevLine[160];
+  char prevMinKey[17];
+  char curMinKey[17];
+
+  // iterate oldest → newest within retention window
+  for (int d = (int)sysConfig.retention_days - 1; d >= 0; d--) {
+
+    DateTime day(now.unixtime() - (uint32_t)d * 86400UL);
+
+    char dateStr[11];
+    snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d",
+             day.year(), day.month(), day.day());
+
+    String filename = "/data/" + String(dateStr) + ".csv";
+
+    if (!takeSDMutex("DOWNLOAD", pdMS_TO_TICKS(3000))) continue;
+
+    File file = SD.open(filename);
+
+    if (!file) {
+      sysSetSD(false);
+      giveSDMutex();
+      continue;
+    }
+
+    sysSetSD(true);
+
+    bool firstLine = true;
+    prevLine[0]   = '\0';
+    prevMinKey[0] = '\0';
+
+    while (file.available()) {
+
+      int len = file.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
+      lineBuf[len] = '\0';
+
+      if (len > 0 && lineBuf[len - 1] == '\r') lineBuf[--len] = '\0';
+      if (len == 0) continue;
+
+      if (firstLine) { firstLine = false; continue; }  // skip CSV header row
+
+      if (!matchesDeviceFilter(lineBuf)) continue;
+      if (!extractMinuteKey(lineBuf, curMinKey)) continue;
+
+      if (strcmp(curMinKey, prevMinKey) != 0) {
+        // minute boundary → emit the previous minute's last record
+        if (prevLine[0] != '\0') {
+          server.sendContent(prevLine);
+          server.sendContent("\r\n");
+        }
+        strncpy(prevMinKey, curMinKey, sizeof(prevMinKey));
+      }
+
+      // keep updating; last record in this minute wins
+      strncpy(prevLine, lineBuf, sizeof(prevLine) - 1);
+      prevLine[sizeof(prevLine) - 1] = '\0';
+    }
+
+    // flush the final pending record
+    if (prevLine[0] != '\0') {
+      server.sendContent(prevLine);
+      server.sendContent("\r\n");
+    }
+
+    file.close();
     giveSDMutex();
 
-    server.send(404, "text/plain", "File not found");
-    return;
+    // brief yield between files so CSV Writer can flush if queued
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
-
-  sysSetSD(true);
-
-  server.sendHeader("Content-Type", "text/csv");
-  server.sendHeader("Content-Disposition", "attachment; filename=" + String(sysConfig.node_id) + "-" + date + ".csv");
-
-  server.streamFile(file, "text/csv");
-  file.close();
-  giveSDMutex();
 }
 
 // ===== GET CONFIG DARI MEMORY ESP =====
@@ -1125,10 +1197,10 @@ void handleSetConfig() {
 
     DateTime now = getNow();
 
-    // resetRuntimePartitionStats(
-    //   now.hour() / sysConfig.partition_hours);
+    resetRuntimePartitionStats(
+      now.hour() / sysConfig.partition_hours);
 
-    invalidateBaselineCache();
+    triggerBaselineRecompute();
 
     logToFile(
       "📊 Partition stats reset. | updated: %u hours",
@@ -1154,7 +1226,7 @@ void handleSetConfig() {
   // retention days berubah
   if (retentionChanged) {
 
-    invalidateBaselineCache();
+    triggerBaselineRecompute();
 
     logToFile(
       "🗂 Retention days updated: %u days",
@@ -1172,7 +1244,7 @@ void handleSetConfig() {
   // min baseline samples berubah
   if (baselineSampleChanged) {
 
-    invalidateBaselineCache();
+    triggerBaselineRecompute();
 
     logToFile(
       "🔁 min_baseline_samples updated: %d",
@@ -1334,7 +1406,10 @@ void handleLatest() {
   json += "\"rtc\":" + String(SYS.rtc_ok ? 1 : 0) + ",";
   json += "\"sensor\":" + String(SYS.sensor_ok ? 1 : 0) + ",";
   json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
-  json += "\"buzzer\":" + String(SYS.alarm_active ? 1 : 0);
+  json += "\"buzzer\":" + String(SYS.alarm_active ? 1 : 0) + ",";
+  json += "\"sensor_dirty\":" + String(sysIsSensorDirty() ? 1 : 0) + ",";
+  json += "\"alarm\":" + String(sysIsAlarm() ? 1 : 0) + ",";
+  json += "\"low_battery\":" + String(sysIsLowBattery() ? 1 : 0);
 
   json += "}";
 
@@ -1502,6 +1577,10 @@ void handleHealth() {
 
   json += "\"low_battery\":";
   json += String(sysIsLowBattery() ? "true" : "false");
+  json += ",";
+
+  json += "\"error\":";
+  json += String(sysIsSystemFault() ? "true" : "false");
 
   json += "}";
 
@@ -1602,13 +1681,12 @@ void handleRTCSync() {
 
   epoch += (7UL * 3600UL);
 
-  rtc.adjust(DateTime(epoch));
-
-  SYS.last_sync_millis = millis();
+  rtc.adjust(
+    DateTime(epoch));
 
   SYS.rtc_ever_synced = true;
 
-  saveRTCSyncState(true);  // simpan RTC sync state ke nvs
+  saveRTCSyncState(true);
 
   sysSetRTC(true);  // lanjut write data csv setelah rtc sinkron
 
@@ -1648,10 +1726,6 @@ void handleRTC() {
   json += SYS.rtc_ever_synced
             ? "true"
             : "false";
-  json += ",";
-
-  json += "\"drift_seconds\":";
-  json += SYS.rtc_drift_seconds;
 
   json += "}";
 
@@ -1728,17 +1802,18 @@ void initWebServer() {
   ROUTE("/api/node/estrus", HTTP_GET, handleEstrus);    // informasi model estrus
   ROUTE("/api/node/history", HTTP_GET, handleHistory);  // untuk melihat data csv
   ROUTE("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
+  ROUTE("/api/node/device", HTTP_GET, handleDevice);    // identitas device (node_id, mac, firmware)
   ROUTE("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
 
   // RTC | WAKTU DEVICE
-  ROUTE("/api/rtc/sync", HTTP_POST, handleRTCSync);    // untuk sinkronisasi waktu RTC
-  ROUTE("/api/rtc", HTTP_GET, handleRTC);              // untuk baca waktu RTC
+  ROUTE("/api/rtc/sync", HTTP_POST, handleRTCSync);  // untuk sinkronisasi waktu RTC
+  ROUTE("/api/rtc", HTTP_GET, handleRTC);            // untuk baca waktu RTC
   ROUTE("/api/rtc/clear", HTTP_POST, handleRTCClear);  // DEVELOPMENT ONLY | RESET TIME & STATE RTC
 
   // CONFIG
-  ROUTE("/api/config", HTTP_GET, handleGetConfig);          // untuk load config dari esp
-  ROUTE("/api/config", HTTP_POST, handleSetConfig);         // untuk ubah config
-  ROUTE("/api/config/reset", HTTP_GET, handleResetConfig);  // untuk reset config (belum dipakai)
+  ROUTE("/api/config", HTTP_GET, handleGetConfig);           // untuk load config dari esp
+  ROUTE("/api/config", HTTP_POST, handleSetConfig);          // untuk ubah config
+  ROUTE("/api/config/reset", HTTP_POST, handleResetConfig);  // untuk reset config ke default
 
   // CONTROL ALARM
   ROUTE("/api/alarm/status", HTTP_GET, handleAlarmStatus);  // cek status alarm
@@ -1746,8 +1821,7 @@ void initWebServer() {
   ROUTE("/api/alarm/stop", HTTP_POST, handleAlarmStop);     // stop alarm
 
   // SYSTEM
-  ROUTE("/api/system", HTTP_GET, handleSystemStatus);  // untuk cek kondisi device
-  ROUTE("/api/storage", HTTP_GET, handleStorage);      // untuk cek kondisi SDCard
+  ROUTE("/api/storage", HTTP_GET, handleStorage);  // untuk cek kondisi SDCard
 
   ROUTE("/ping", HTTP_GET, []() {
     server.send(200, "text/plain", "OK");

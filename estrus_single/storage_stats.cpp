@@ -2,42 +2,38 @@
 #include "config_runtime.h"
 #include "rtc_manager.h"
 #include "system_state.h"
+#include "sd_manager.h"
 #include "logger.h"
 #include <SD.h>
 
 #define CSV_BUFFER_SIZE 128
-
-struct BaselineCache {
-
-  // uint8_t partition;
-  uint8_t day;
-  float baseline;
-  uint32_t samples;
-  bool valid;
-};
-
-static BaselineCache baselineCache = {
-
-  // 255,
-  255,
-  0,
-  0,
-  false
-};
+#define MAX_PARTITIONS  24
 
 uint32_t csvRowsWritten = 0;
+
+// =====================================================
+// PRE-COMPUTED BASELINE (in RAM, per partition)
+// =====================================================
+
+struct PrecomputedBaseline {
+  float    rate;
+  uint32_t samples;
+  bool     valid;
+};
+
+static PrecomputedBaseline precomputed[MAX_PARTITIONS];
 
 // =====================================================
 // PARTITION
 // =====================================================
 
-// static uint8_t getPartitionFromHour(uint8_t hour) {
+static uint8_t getPartitionFromHour(uint8_t hour) {
 
-//   if (sysConfig.partition_hours == 0)
-//     return 0;
+  if (sysConfig.partition_hours == 0)
+    return 0;
 
-//   return (hour / sysConfig.partition_hours);
-// }
+  return (hour / sysConfig.partition_hours);
+}
 
 // =====================================================
 // TIMESTAMP PARSER
@@ -156,77 +152,56 @@ static String getHistoricalFile(int daysAgo) {
   snprintf(
     path,
     sizeof(path),
-    "/data/%04d-%02d-%02d.csv",
+    "/data/%s-%04d-%02d-%02d.csv",
+    sysConfig.node_id,
     d.year(),
     d.month(),
     d.day());
-
-  // logToFile(
-  //   "📂 Historical file: %s",
-  //   path);
 
   return String(path);
 }
 
 // =====================================================
-// BASELINE
+// BASELINE RECOMPUTE
+// Scans all historical files in one pass, accumulating
+// standing/total counts for every partition at once.
 // =====================================================
-bool loadGlobalBaseline(
-  float &baselineRate,
-  uint32_t &baselineSamples) {
 
-  baselineRate = 0;
-  baselineSamples = 0;
+void triggerBaselineRecompute() {
 
-  uint32_t standingCount = 0;
-  uint32_t totalCount = 0;
+  for (int p = 0; p < MAX_PARTITIONS; p++) {
+    precomputed[p].valid = false;
+  }
 
-  // DEBUG CEK FILE
-  // File dir = SD.open("/data");
+  if (!SYS.rtc_ok || sysConfig.partition_hours == 0) {
+    logToFile("⚠️ Baseline recompute skipped: RTC/partition not ready");
+    return;
+  }
 
-  // while (true) {
+  uint32_t standingCounts[MAX_PARTITIONS] = {0};
+  uint32_t totalCounts[MAX_PARTITIONS]    = {0};
 
-  //   File f = dir.openNextFile();
+  if (!takeSDMutex("recompute", pdMS_TO_TICKS(2000))) {
+    logToFile("⚠️ Baseline recompute: SD mutex timeout");
+    return;
+  }
 
-  //   if (!f) break;
+  uint16_t yieldCtr = 0;
 
-  //   logToFile(
-  //     "FOUND FILE: %s",
-  //     f.name());
-
-  //   f.close();
-  // }
-
-  // dir.close();
-
-
-  for (int d = 0;
-       d <= sysConfig.retention_days;
-       d++) {
+  for (int d = 1; d <= sysConfig.retention_days; d++) {
 
     String filename = getHistoricalFile(d);
 
-    if (d == 0) {
-      filename = "/data/" + todayDateStr() + ".csv";
-    }
-
-    // logToFile("📂 Baseline file: %s", filename.c_str());
-
-    if (filename == "") {
+    if (filename == "")
       break;
-    }
 
-    if (!SD.exists(filename)) {
-      // logToFile("⚠️ File not found");
+    if (!SD.exists(filename))
       continue;
-    }
 
     File f = SD.open(filename);
-    logToFile("✅ File record opened");
 
-    if (!f) {
+    if (!f)
       continue;
-    }
 
     // skip header
     f.readStringUntil('\n');
@@ -236,272 +211,90 @@ bool loadGlobalBaseline(
     while (f.available()) {
 
       size_t len =
-        f.readBytesUntil(
-          '\n',
-          line,
-          sizeof(line) - 1);
+        f.readBytesUntil('\n', line, sizeof(line) - 1);
 
       line[len] = '\0';
 
-      // logToFile(
-      //   "CSV: %s",
-      //   line);
-
-      if (len < 10) {
+      if (len < 10)
         continue;
-      }
+
+      char timestamp[24];
+
+      if (!getField(line, 2, timestamp, sizeof(timestamp)))
+        continue;
+
+      int hour = parseHour(timestamp);
+
+      if (hour < 0)
+        continue;
+
+      uint8_t p = getPartitionFromHour(hour);
+
+      if (p >= MAX_PARTITIONS)
+        continue;
 
       char s1buf[4];
       char s2buf[4];
 
-      if (!getField(
-            line,
-            3,
-            s1buf,
-            sizeof(s1buf))) {
+      if (!getField(line, 3, s1buf, sizeof(s1buf)))
         continue;
-      }
 
-      if (!getField(
-            line,
-            4,
-            s2buf,
-            sizeof(s2buf))) {
+      if (!getField(line, 4, s2buf, sizeof(s2buf)))
         continue;
-      }
 
-      bool sensor1 =
-        atoi(s1buf);
+      bool isStanding = (atoi(s1buf) && atoi(s2buf));
 
-      bool sensor2 =
-        atoi(s2buf);
+      totalCounts[p]++;
 
-      bool standing =
-        (sensor1 || sensor2);
+      if (isStanding)
+        standingCounts[p]++;
 
-      totalCount++;
-
-      if (standing) {
-        standingCount++;
+      // yield every 200 lines so non-SD tasks (LED, buzzer, logger) get
+      // CPU time; SD mutex stays held to keep all file handles valid
+      if (++yieldCtr >= 200) {
+        yieldCtr = 0;
+        vTaskDelay(pdMS_TO_TICKS(1));
       }
     }
 
     f.close();
   }
 
-  if (totalCount < sysConfig.min_baseline_samples) {
+  giveSDMutex();
 
-    logToFile(
-      "⚠️ total: %lu | min b.samples: %u! lanjut menghitung...",
+  // Store results for all partitions
+  uint8_t populated = 0;
 
-      totalCount,
+  for (int p = 0; p < MAX_PARTITIONS; p++) {
 
-      sysConfig.min_baseline_samples);
+    if (totalCounts[p] == 0)
+      continue;
 
-    return false;
+    precomputed[p].rate    = (float)standingCounts[p] / (float)totalCounts[p];
+    precomputed[p].samples = totalCounts[p];
+    precomputed[p].valid   = true;
+    populated++;
   }
 
-  baselineRate =
-    (float)standingCount / (float)totalCount;
-
-  baselineSamples =
-    totalCount;
-
-  logToFile(
-    "📊 Standing = %lu | Total = %lu | Base rate = %.2f%%",
-
-    standingCount,
-
-    totalCount,
-
-    baselineRate * 100.0f);
-
-  return true;
+  logToFile("📊 Baseline recomputed: %u partitions populated", populated);
 }
 
+// =====================================================
+// GET CACHED BASELINE (RAM read only, zero SD access)
+// =====================================================
 
-// bool loadPartitionBaseline(uint8_t partition,
-//                            float &baselineRate,
-//                            uint32_t &baselineSamples) {
+bool getCachedBaseline(uint8_t partition,
+                       float   &baselineRate,
+                       uint32_t &baselineSamples) {
 
-//   baselineRate = 0.0f;
-//   baselineSamples = 0;
-//   uint32_t standingCount = 0;
-//   uint32_t totalCount = 0;
+  if (partition >= MAX_PARTITIONS)
+    return false;
 
-//   DateTime now = getNow();
-//   uint8_t today = now.day();
+  if (!precomputed[partition].valid)
+    return false;
 
-//   if (baselineCache.valid && baselineCache.partition == partition &&
+  baselineRate    = precomputed[partition].rate;
+  baselineSamples = precomputed[partition].samples;
 
-//       baselineCache.day == today) {
-//     baselineRate =
-//       baselineCache.baseline;
-
-//     baselineSamples =
-//       baselineCache.samples;
-
-//     return true;
-//   }
-
-//   // ==========================================
-//   // LOOP HISTORICAL FILES
-//   // ==========================================
-
-//   for (
-//     int d = 1;
-//     d <= sysConfig.retention_days;
-//     d++) {
-
-//     String filename = getHistoricalFile(d);
-
-//     logToFile(
-//       "📂 Baseline check: %s",
-//       filename.c_str());
-
-//     if (filename == "")
-//       break;
-
-//     if (!SD.exists(filename)) {
-
-//       continue;
-//     }
-
-//     File f =
-//       SD.open(filename);
-
-//     if (!f)
-//       continue;
-
-//     // skip header
-
-//     f.readStringUntil('\n');
-
-//     char line[CSV_BUFFER_SIZE];
-
-//     while (f.available()) {
-
-//       size_t len =
-//         f.readBytesUntil(
-//           '\n',
-//           line,
-//           sizeof(line) - 1);
-
-//       line[len] = '\0';
-
-//       if (len < 10)
-//         continue;
-
-//       char timestamp[24];
-
-//       if (!getField(
-//             line,
-//             2,
-//             timestamp,
-//             sizeof(timestamp)))
-//         continue;
-
-//       int hour =
-//         parseHour(
-//           timestamp);
-
-//       if (hour < 0)
-//         continue;
-
-//       uint8_t filePartition =
-//         getPartitionFromHour(hour);
-
-//       if (filePartition != partition) {
-
-//         continue;
-//       }
-
-//       char s1buf[4];
-//       char s2buf[4];
-
-//       if (!getField(
-//             line,
-//             3,
-//             s1buf,
-//             sizeof(s1buf)))
-//         continue;
-
-//       if (!getField(
-//             line,
-//             4,
-//             s2buf,
-//             sizeof(s2buf)))
-//         continue;
-
-//       bool sensor1 =
-//         atoi(s1buf);
-
-//       bool sensor2 =
-//         atoi(s2buf);
-
-//       bool standing =
-//         (sensor1 || sensor2);
-
-//       totalCount++;
-
-//       if (standing)
-//         standingCount++;
-//     }
-
-//     f.close();
-//   }
-
-//   // ==========================================
-//   // RESULT
-//   // ==========================================
-
-//   logToFile(
-//     "📊 Baseline partition=%u standing=%lu total=%lu",
-
-//     partition,
-
-//     standingCount,
-
-//     totalCount);
-
-//   if (totalCount < sysConfig.min_baseline_samples) {
-
-//     logToFile(
-//       "⚠️ Baseline insufficient samples: %lu/%u",
-
-//       totalCount,
-
-//       sysConfig.min_baseline_samples);
-
-//     return false;
-//   }
-
-//   baselineRate =
-//     (float)standingCount / (float)totalCount;
-
-//   baselineSamples =
-//     totalCount;
-
-//   baselineCache.partition =
-//     partition;
-
-//   baselineCache.day =
-//     today;
-
-//   baselineCache.baseline =
-//     baselineRate;
-
-//   baselineCache.samples =
-//     baselineSamples;
-
-//   baselineCache.valid =
-//     true;
-
-//   return true;
-// }
-
-// INVALID BASELINE CACHE
-void invalidateBaselineCache() {
-
-  baselineCache.valid = false;
+  return true;
 }

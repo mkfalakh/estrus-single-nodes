@@ -1,4 +1,25 @@
 #include "csv_reverse.h"
+#include "config_runtime.h"
+
+// Returns true if columns 0 (device_id) and 1 (animal_id) match sysConfig.
+static bool csvLineMatchesDevice(const char *line) {
+  const char *p = line;
+  const char *d0 = p;
+  while (*p && *p != ',') p++;
+  int d0len = p - d0;
+  if (!*p) return false;
+  p++;
+  const char *d1 = p;
+  while (*p && *p != ',') p++;
+  int d1len = p - d1;
+
+  int nlen = strlen(sysConfig.node_id);
+  int alen = strlen(sysConfig.animal_id);
+
+  if (nlen > 0 && (d0len != nlen || strncmp(d0, sysConfig.node_id, nlen) != 0)) return false;
+  if (alen > 0 && (d1len != alen || strncmp(d1, sysConfig.animal_id, alen) != 0)) return false;
+  return true;
+}
 
 int readCsvPage(File &file,
                 char (*lines)[160],
@@ -63,11 +84,9 @@ int readCsvPage(File &file,
 
         buffer[charIndex] = '\0';
 
-        // skip header CSV
-        if (strncmp(buffer,
-                    "device_id,",
-                    10)
-            != 0) {
+        // skip header CSV and records not belonging to this device/animal
+        if (strncmp(buffer, "device_id,", 10) != 0
+            && csvLineMatchesDevice(buffer)) {
 
           // sudah masuk halaman yang diminta
           if (foundLines >= startIndex && foundLines < endIndex) {
