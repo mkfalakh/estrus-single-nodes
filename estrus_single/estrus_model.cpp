@@ -7,7 +7,7 @@
 
 #define MAX_PARTITIONS 24
 
-static PartitionStats partitionStats[MAX_PARTITIONS];
+static GlobalStats stats;
 static uint8_t lastPartition = 255;
 static uint8_t lastDay = 255;
 
@@ -22,21 +22,13 @@ static uint8_t getPartitionIndex() {
 // RESET STANDING
 // ======================================
 
-// void resetRuntimePartitionStats(uint8_t partition) {
+void resetGlobalStats() {
 
-//   // uint8_t partition = getPartitionIndex();
+  stats.standing = 0;
+  stats.total = 0;
 
-//   if (partition >= MAX_PARTITIONS) {
-//     return;
-//   }
-
-//   partitionStats[partition].standing = 0;
-//   partitionStats[partition].total = 0;
-
-//   logToFile(
-//     "📊 Partition %u runtime stats reset",
-//     partition);
-// }
+  logToFile("📊 Global stats reset");
+}
 
 
 // ======================================
@@ -61,17 +53,21 @@ void checkTimeTransitions() {
     return;
   }
 
-  uint8_t today =
-    getNow().day();
-
-  if (lastDay == 255) {
-
-    lastDay = today;
-
+  if (sysConfig.partition_hours == 0) {
     return;
   }
 
-  if (today != lastDay) {
+  DateTime now = getNow();
+
+  uint8_t newDay = now.day();
+
+  uint8_t newPartition =
+    now.hour() / sysConfig.partition_hours;
+
+  if (lastPartition == 255) {
+
+    lastPartition = newPartition;
+    lastDay = newDay;
 
     return;
   }
@@ -94,11 +90,16 @@ void checkTimeTransitions() {
   // ======================
   if (lastPartition != 255 && newPartition != lastPartition) {
 
-    resetRuntimePartitionStats(newPartition);
+    resetGlobalStats();
 
     logToFile(
-      "📅 New day");
+      "🕒 Partition %u → %u",
+      lastPartition,
+      newPartition);
   }
+
+  lastDay = newDay;
+  lastPartition = newPartition;
 }
 
 // void checkTimeTransitions() {
@@ -236,15 +237,13 @@ EstrusResult evaluateEstrus() {
     0,
     sizeof(r));
 
-  if (stats.total == 0) {
+  if (stats.total == 0)
     return r;
-  }
 
   r.current_rate =
     (float)stats.standing / (float)stats.total;
 
-  float baselineRate = 0;
-  uint32_t baselineSamples = 0;
+  uint8_t p = getPartitionIndex();
 
   // -----------------------------
   // baseline
@@ -273,17 +272,21 @@ EstrusResult evaluateEstrus() {
 
   if (baselineSamples < sysConfig.min_baseline_samples) {
 
+    r.valid = false;
+
     return r;
   }
 
   if (baselineRate <= 0.0001f) {
 
+    r.valid = false;
+
     return r;
   }
 
   r.deviation_pct =
-    ((r.current_rate - baselineRate)
-     / baselineRate)
+    (r.current_rate - baselineRate)
+    / baselineRate
     * 100.0f;
 
   r.estrus =

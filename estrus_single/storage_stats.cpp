@@ -170,11 +170,6 @@ static String getHistoricalFile(int daysAgo) {
 // Scans all historical files in one pass, accumulating
 // standing/total counts for every partition at once.
 // =====================================================
-bool loadGlobalBaseline(
-  float &baselineRate,
-  uint32_t &baselineSamples) {
-
-
 void triggerBaselineRecompute() {
 
   for (int p = 0; p < MAX_PARTITIONS; p++) {
@@ -199,10 +194,6 @@ void triggerBaselineRecompute() {
   for (int d = 1; d <= sysConfig.retention_days; d++) {
 
     String filename = getHistoricalFile(d);
-
-    if (d == 0) {
-      filename = "/data/" + todayDateStr() + ".csv";
-    }
 
     // logToFile("📂 Baseline file: %s", filename.c_str());
 
@@ -250,19 +241,15 @@ void triggerBaselineRecompute() {
 
       if (p >= MAX_PARTITIONS)
         continue;
-      }
 
       char s1buf[4];
       char s2buf[4];
 
       if (!getField(line, 3, s1buf, sizeof(s1buf)))
         continue;
-      }
-
 
       if (!getField(line, 4, s2buf, sizeof(s2buf)))
         continue;
-      }
 
       bool isStanding = (atoi(s1buf) && atoi(s2buf));
 

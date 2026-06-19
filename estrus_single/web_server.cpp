@@ -13,6 +13,7 @@
 #include "logger.h"
 #include "sens_proximity.h"
 #include "storage_stats.h"
+#include "estrus_model.h"
 #include "wifi_manager.h"
 #include "csv_writer.h"
 #include <WebServer.h>
