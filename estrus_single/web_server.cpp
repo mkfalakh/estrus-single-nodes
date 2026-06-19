@@ -458,8 +458,12 @@ void handleHistory() {
 
   String json;
 
-  json.reserve(
-    256 + (count * 180));
+  if (!json.reserve(256 + (count * 180))) {
+    free(lines);
+    server.send(500, "application/json", "{\"error\":\"oom_json\"}");
+    logResponse(500, "oom json reserve");
+    return;
+  }
 
   json = "{";
 
@@ -506,11 +510,11 @@ void handleHistory() {
   json += "}";
 
 
+  free(lines);
+
   server.sendHeader("Connection", "close");
   server.send(200, "application/json", json);
   logResponse(200);
-
-  free(lines);
 }
 
 // ===== HANDLE ALARM =====

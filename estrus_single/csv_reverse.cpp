@@ -1,26 +1,47 @@
 #include "csv_reverse.h"
 #include "config_runtime.h"
 
-// Returns true if columns 0 (device_id) and 1 (animal_id) match sysConfig.
+// Byte-by-byte field match — avoids ROM strncmp which uses L32I word loads
+// and crashes with LoadStoreAlignment when the source pointer is not 4-byte
+// aligned (d1 = line + node_id_len+1 can be at any alignment).
 static bool csvLineMatchesDevice(const char *line) {
-  const char *p = line;
-  const char *d0 = p;
-  while (*p && *p != ',') p++;
-  int d0len = p - d0;
-  if (!*p) return false;
-  p++;
-  const char *d1 = p;
-  while (*p && *p != ',') p++;
-  int d1len = p - d1;
-
   int nlen = strlen(sysConfig.node_id);
   int alen = strlen(sysConfig.animal_id);
 
-  if (nlen > 0 && (d0len != nlen || strncmp(d0, sysConfig.node_id, nlen) != 0)) return false;
-  if (alen > 0 && (d1len != alen || strncmp(d1, sysConfig.animal_id, alen) != 0)) return false;
+  if (nlen == 0 && alen == 0) return true;
+
+  const char *p = line;
+
+  // --- field 0: device_id ---
+  if (nlen > 0) {
+    for (int i = 0; i < nlen; i++, p++) {
+      if (*p != sysConfig.node_id[i]) return false;
+    }
+    if (*p != ',') return false;
+    p++;
+  } else {
+    while (*p && *p != ',') p++;
+    if (!*p) return false;
+    p++;
+  }
+
+  // --- field 1: animal_id ---
+  if (alen > 0) {
+    for (int i = 0; i < alen; i++, p++) {
+      if (*p != sysConfig.animal_id[i]) return false;
+    }
+    if (*p != ',' && *p != '\0') return false;
+  }
+
   return true;
 }
 
+// Reads up to `limit` data rows starting at reverse-order index `page*limit`
+// (newest row = index 0) by scanning the file backwards in 512-byte chunks.
+//
+// Old approach: one file.seek()+file.read() per byte — 100k+ SD ops for a
+// typical day file, holding the SD mutex for seconds.
+// New approach: ~200 chunk reads for the same file, mutex held for ~100 ms.
 int readCsvPage(File &file,
                 char (*lines)[160],
                 int page,
@@ -29,109 +50,103 @@ int readCsvPage(File &file,
 
   hasNext = false;
 
-  if (!file || limit <= 0 || page < 0) {
-    return 0;
-  }
+  if (!file || limit <= 0 || page < 0) return 0;
 
-  const int BUFFER_SIZE = 160;
+  const int CHUNK   = 512;
+  const int LINE_MAX = 159;
 
   int fileSize = file.size();
+  if (fileSize <= 0) return 0;
 
-  if (fileSize <= 0) {
-    return 0;
-  }
+  int startIdx = page * limit;
+  int endIdx   = startIdx + limit;
 
-  int startIndex = page * limit;
-  int endIndex = startIndex + limit;
+  // rev accumulates the current line's characters in REVERSE order as we
+  // scan the file backwards; we flip in-place when a '\n' is found.
+  char rev[LINE_MAX + 1] __attribute__((aligned(4)));
+  int  revLen = 0;
 
-  int foundLines = 0;
+  int foundLines  = 0;
   int copiedLines = 0;
 
-  char buffer[BUFFER_SIZE];
-  int charIndex = 0;
+  uint8_t chunk[CHUNK];
+  int filePos = fileSize;
 
-  memset(buffer, 0, sizeof(buffer));
+  while (filePos > 0) {
 
-  // baca dari akhir file
-  for (int pos = fileSize - 1; pos >= 0; pos--) {
+    int readSize = (filePos >= CHUNK) ? CHUNK : filePos;
+    filePos -= readSize;
 
-    file.seek(pos);
+    file.seek(filePos);
+    file.read(chunk, readSize);
 
-    char c = file.read();
+    for (int i = readSize - 1; i >= 0; i--) {
+      char c = (char)chunk[i];
 
-    // akhir baris ditemukan
-    if (c == '\n' || pos == 0) {
+      if (c == '\n') {
 
-      // jika awal file, masukkan karakter terakhir
-      if (pos == 0 && c != '\n') {
+        if (revLen > 0) {
+          // reverse in-place → forward line
+          for (int l = 0, r = revLen - 1; l < r; l++, r--) {
+            char t = rev[l]; rev[l] = rev[r]; rev[r] = t;
+          }
+          rev[revLen] = '\0';
 
-        if (charIndex < BUFFER_SIZE - 1) {
-          buffer[charIndex++] = c;
-        }
-      }
+          // skip CSV header (byte-by-byte, no strncmp)
+          bool isHeader = (revLen >= 9
+            && rev[0]=='d' && rev[1]=='e' && rev[2]=='v'
+            && rev[3]=='i' && rev[4]=='c' && rev[5]=='e'
+            && rev[6]=='_' && rev[7]=='i' && rev[8]=='d');
 
-      if (charIndex > 0) {
+          if (!isHeader && csvLineMatchesDevice(rev)) {
 
-        // reverse buffer
-        for (int i = 0; i < charIndex / 2; i++) {
+            if (foundLines >= startIdx && foundLines < endIdx) {
+              strncpy(lines[copiedLines], rev, LINE_MAX);
+              lines[copiedLines][LINE_MAX] = '\0';
+              copiedLines++;
+            }
 
-          char tmp = buffer[i];
+            foundLines++;
 
-          buffer[i] = buffer[charIndex - 1 - i];
-
-          buffer[charIndex - 1 - i] = tmp;
-        }
-
-        buffer[charIndex] = '\0';
-
-        // skip header CSV and records not belonging to this device/animal
-        if (strncmp(buffer, "device_id,", 10) != 0
-            && csvLineMatchesDevice(buffer)) {
-
-          // sudah masuk halaman yang diminta
-          if (foundLines >= startIndex && foundLines < endIndex) {
-
-            strncpy(lines[copiedLines],
-                    buffer,
-                    BUFFER_SIZE - 1);
-
-            lines[copiedLines][BUFFER_SIZE - 1] = '\0';
-
-            copiedLines++;
+            if (foundLines > endIdx) {
+              hasNext = true;
+              return copiedLines;
+            }
           }
 
-          foundLines++;
-
-          // cek apakah masih ada data setelah halaman ini
-          if (foundLines > endIndex) {
-
-            hasNext = true;
-
-            break;
-          }
+          revLen = 0;
         }
-      }
 
-      // reset buffer
-      charIndex = 0;
-
-      memset(buffer, 0, sizeof(buffer));
-    } else {
-
-      // simpan karakter jika buffer belum penuh
-      if (c != '\r' && charIndex < BUFFER_SIZE - 1) {
-
-        buffer[charIndex++] = c;
+      } else if (c != '\r') {
+        if (revLen < LINE_MAX) rev[revLen++] = c;
       }
     }
 
-    static uint16_t watchdogCounter = 0;
+    taskYIELD();
+  }
 
-    if (++watchdogCounter >= 256) {
+  // flush the very first line (start of file, no leading '\n')
+  if (revLen > 0) {
+    for (int l = 0, r = revLen - 1; l < r; l++, r--) {
+      char t = rev[l]; rev[l] = rev[r]; rev[r] = t;
+    }
+    rev[revLen] = '\0';
 
-      watchdogCounter = 0;
+    bool isHeader = (revLen >= 9
+      && rev[0]=='d' && rev[1]=='e' && rev[2]=='v'
+      && rev[3]=='i' && rev[4]=='c' && rev[5]=='e'
+      && rev[6]=='_' && rev[7]=='i' && rev[8]=='d');
 
-      vTaskDelay(pdMS_TO_TICKS(1));
+    if (!isHeader && csvLineMatchesDevice(rev)) {
+
+      if (foundLines >= startIdx && foundLines < endIdx) {
+        strncpy(lines[copiedLines], rev, LINE_MAX);
+        lines[copiedLines][LINE_MAX] = '\0';
+        copiedLines++;
+      }
+
+      foundLines++;
+      if (foundLines > endIdx) hasNext = true;
     }
   }
 
