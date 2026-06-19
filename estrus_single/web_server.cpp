@@ -23,6 +23,9 @@
 
 #define TZ_OFFSET (7 * 3600)  // timezone GMT+7 WIB
 
+static void logRequest();
+static void logResponse(int code, const char* note = nullptr);
+
 WebServer server(80);
 
 // update last client
