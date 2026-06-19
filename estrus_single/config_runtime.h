@@ -27,6 +27,12 @@ typedef struct {
   uint16_t min_baseline_samples;
   uint16_t dirty_timeout_samples;
 
+  // Hormone injection date (YYYY-MM-DD). Injections synchronize or shorten
+  // the natural 21-day reproductive cycle. Estrus typically shows ~day 20-21
+  // from injection. Leave empty if not set. Used by /api/node/estrus to report
+  // cycle_day and is_estrus_window (detection window: days 18-22).
+  char injection_date[12];
+
 } SystemConfig;
 
 extern SystemConfig sysConfig;

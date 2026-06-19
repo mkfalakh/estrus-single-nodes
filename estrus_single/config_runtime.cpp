@@ -194,6 +194,11 @@ void loadConfig() {
       sysConfig.power_threshold = prefs.getFloat("pow_th", 600.0);
       powerStats.energy_mWh = prefs.getFloat("energy", 0);
 
+      // Hormone injection date
+      String tmp_inj = prefs.getString("inj_date", "");
+      memset(sysConfig.injection_date, 0, sizeof(sysConfig.injection_date));
+      strncpy(sysConfig.injection_date, tmp_inj.c_str(), sizeof(sysConfig.injection_date) - 1);
+
       prefs.end();
 
       if (configChanged) {
@@ -234,6 +239,9 @@ void loadConfig() {
     sysConfig.current_threshold = 150.0;  // 100 - 150 mA | alert batas maksimal arus batre
     sysConfig.power_threshold = 600.0;    // 400 - 600 mW | alert batas maksimal power batre
     powerStats.energy_mWh = 0;
+
+    // Hormone injection date (empty = not set)
+    memset(sysConfig.injection_date, 0, sizeof(sysConfig.injection_date));
 
     saveConfig();
 
@@ -289,6 +297,9 @@ void saveConfig() {
   prefs.putFloat("curr_th", sysConfig.current_threshold);
   prefs.putFloat("pow_th", sysConfig.power_threshold);
   prefs.putFloat("energy", powerStats.energy_mWh);
+
+  // Hormone injection date
+  prefs.putString("inj_date", String(sysConfig.injection_date));
 
   prefs.end();
 

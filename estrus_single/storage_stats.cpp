@@ -152,8 +152,7 @@ static String getHistoricalFile(int daysAgo) {
   snprintf(
     path,
     sizeof(path),
-    "/data/%s-%04d-%02d-%02d.csv",
-    sysConfig.node_id,
+    "/data/%04d-%02d-%02d.csv",
     d.year(),
     d.month(),
     d.day());

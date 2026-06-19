@@ -232,18 +232,21 @@ void handleCheckAuth() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 void handleLogout() {
   logToFile("✅ Logout sukses");
   server.sendHeader("Set-Cookie", "ESPSESSIONID=deleted; Path=/; Max-Age=0");
   server.send(200, "application/json", "{\"success\":true}");
+  logResponse(200);
 }
 
 void handleLogin() {
 
   if (!server.hasArg("user") || !server.hasArg("pass")) {
     server.send(400, "application/json", "{\"success\":false}");
+    logResponse(400, "missing args");
     return;
   }
 
@@ -255,6 +258,7 @@ void handleLogin() {
     logToFile("❌ Login gagal (user salah): " + user);
     // vTaskDelay(pdMS_TO_TICKS(300));
     server.send(200, "application/json", "{\"success\":false}");
+    logResponse(200, "wrong user");
     return;
   }
 
@@ -265,6 +269,7 @@ void handleLogin() {
     logToFile("❌ Login gagal (password salah)");
     // vTaskDelay(pdMS_TO_TICKS(300));
     server.send(200, "application/json", "{\"success\":false}");
+    logResponse(200, "wrong pass");
     return;
   }
 
@@ -272,6 +277,7 @@ void handleLogin() {
   String sessionId;
   if (!createSession(sessionId)) {
     server.send(500, "application/json", "{\"error\":\"session penuh\"}");
+    logResponse(500, "session full");
     return;
   }
 
@@ -280,6 +286,7 @@ void handleLogin() {
   server.sendHeader("Set-Cookie", "ESPSESSIONID=" + sessionId + "; Path=/; SameSite=Lax; Max-Age=3600");
 
   server.send(200, "application/json", "{\"success\":true}");
+  logResponse(200, "ok");
 }
 
 
@@ -310,6 +317,8 @@ void handleHistory() {
       "application/json",
       "{\"error\":\"invalid date\"}");
 
+    logResponse(400, "invalid date");
+
     return;
   }
 
@@ -319,6 +328,8 @@ void handleHistory() {
       503,
       "application/json",
       "{\"error\":\"sd_busy\"}");
+
+    logResponse(503, "sd_busy");
 
     return;
   }
@@ -328,26 +339,18 @@ void handleHistory() {
 
   String filename = "/data/" + date + ".csv";
 
-  // String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
-
   if (!SD.exists(filename)) {
 
     logToFile("⚠️ [history] file not found: " + filename);
+
+    giveSDMutex();
 
     server.send(
       200,
       "application/json",
       "{\"date\":\"" + date + "\",\"rows\":[],\"has_next\":false}");
 
-    return;
-  }
-
-  if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
-
-    server.send(
-      503,
-      "application/json",
-      "{\"error\":\"sd_busy\"}");
+    logResponse(200, "file not found, empty rows");
 
     return;
   }
@@ -366,6 +369,8 @@ void handleHistory() {
       500,
       "application/json",
       "{\"error\":\"sd\"}");
+
+    logResponse(500, "sd open failed");
 
     return;
   }
@@ -424,6 +429,8 @@ void handleHistory() {
       500,
       "application/json",
       "{\"error\":\"oom\"}");
+
+    logResponse(500, "oom");
 
     return;
   }
@@ -498,6 +505,7 @@ void handleHistory() {
 
   server.sendHeader("Connection", "close");
   server.send(200, "application/json", json);
+  logResponse(200);
 
   free(lines);
 }
@@ -522,6 +530,7 @@ void handleAlarmStatus() {
   json += "}";
 
   server.send(200, "application/json", json);
+  logResponse(200);
 }
 
 void handleAlarmStop() {
@@ -543,6 +552,7 @@ void handleAlarmStop() {
   logToFile("🔕 Alarm stopped via API");
 
   server.send(200, "application/json", "{\"success\":true}");
+  logResponse(200);
 }
 
 void handleAlarmStart() {
@@ -553,9 +563,8 @@ void handleAlarmStart() {
 
   logToFile("🔔 Alarm resume via API");
 
-  // String json = "{\"success\":true}";
-
   server.send(200, "application/json", "{\"success\":true}");
+  logResponse(200);
 }
 
 // ===== HANDLE DOWNLOAD BUTTON =====
@@ -602,11 +611,13 @@ void handleDownload() {
 
   if (!SYS.rtc_ok) {
     server.send(503, "text/plain", "RTC not ready");
+    logResponse(503, "rtc not ready");
     return;
   }
 
   if (!SYS.sd_ok) {
     server.send(503, "text/plain", "SD not available");
+    logResponse(503, "sd not available");
     return;
   }
 
@@ -617,6 +628,7 @@ void handleDownload() {
   server.sendHeader("Content-Disposition", "attachment; filename=" + csvName);
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(200, "text/csv", "");
+  logResponse(200, "streaming csv");
 
   server.sendContent(
     "device_id,animal_id,timestamp,sensor1_state,sensor2_state,"
@@ -757,11 +769,17 @@ void handleGetConfig() {
 
   // BATTERY
   json += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
-  json += "\"power_threshold\":" + String(sysConfig.power_threshold);
+  json += "\"power_threshold\":" + String(sysConfig.power_threshold) + ",";
+
+  // Hormone injection date. Estrus typically shows ~day 20-21 from injection.
+  json += "\"injection_date\":\"";
+  json += String(sysConfig.injection_date);
+  json += "\"";
 
   json += "}";
 
   server.send(200, "application/json", json);
+  logResponse(200);
 }
 
 // ===== SET/SAVE CONFIG DARI USER =====
@@ -801,6 +819,8 @@ void handleSetConfig() {
         400,
         "application/json",
         "{\"error\":\"invalid json body\"}");
+
+      logResponse(400, "invalid json");
 
       return;
     }
@@ -1124,6 +1144,44 @@ void handleSetConfig() {
   }
 
   // ========================
+  // START DATE (YYYY-MM-DD)
+  // Hormone injection date used to synchronize or shorten the natural 21-day
+  // reproductive cycle. Estrus typically shows ~day 20-21 from injection.
+  // Send empty string to clear.
+  // ========================
+  if (hasField("injection_date")) {
+
+    String id = fieldStr("injection_date");
+
+    id.trim();
+
+    if (id.length() == 0) {
+
+      memset(temp.injection_date, 0, sizeof(temp.injection_date));
+
+    } else if (
+      id.length() == 10
+      && id[4] == '-'
+      && id[7] == '-') {
+
+      memset(temp.injection_date, 0, sizeof(temp.injection_date));
+
+      strncpy(temp.injection_date, id.c_str(), sizeof(temp.injection_date) - 1);
+
+    } else {
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid injection_date, use YYYY-MM-DD\"}");
+
+      logResponse(400, "invalid injection_date");
+
+      return;
+    }
+  }
+
+  // ========================
   // POWER & CURRENT BATTERY
   // ========================
   if (hasField("current_threshold")) {
@@ -1178,6 +1236,7 @@ void handleSetConfig() {
 
   bool currentChanged = temp.current_threshold != sysConfig.current_threshold;
   bool powerChanged = temp.power_threshold != sysConfig.power_threshold;
+  bool injectionDateChanged = strcmp(temp.injection_date, sysConfig.injection_date) != 0;
 
   sysConfig = temp;
 
@@ -1288,6 +1347,14 @@ void handleSetConfig() {
       sysConfig.power_threshold);
   }
 
+  // injection date berubah
+  if (injectionDateChanged) {
+
+    logToFile(
+      "📅 Injection date updated: %s (estrus expected ~day 20-21)",
+      sysConfig.injection_date[0] ? sysConfig.injection_date : "(cleared)");
+  }
+
   // ==== SAVE CONFIG ====
   saveConfig();
 
@@ -1310,7 +1377,8 @@ void handleSetConfig() {
     savedJson += "\"min_baseline_samples\":" + String(sysConfig.min_baseline_samples) + ",";
     savedJson += "\"dirty_timeout_samples\":" + String(sysConfig.dirty_timeout_samples) + ",";
     savedJson += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
-    savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold);
+    savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold) + ",";
+    savedJson += "\"injection_date\":\"" + String(sysConfig.injection_date) + "\"";
 
     savedJson += "}";
 
@@ -1339,6 +1407,8 @@ void handleSetConfig() {
     "application/json",
     json);
 
+  logResponse(200, needRestart ? "restart pending" : "ok");
+
   // ========================
   // RESTART
   // ========================
@@ -1360,6 +1430,7 @@ void handleResetConfig() {
   resetConfig();
 
   server.send(200, "application/json", "{\"reset\":true}");
+  logResponse(200);
 }
 
 // ===== HANDLE DEVICE NODE =====
@@ -1427,6 +1498,7 @@ void handleLatest() {
   server.sendHeader("Connection", "close");
 
   server.send(200, "application/json", json);
+  logResponse(200);
 }
 
 void handleEstrus() {
@@ -1437,6 +1509,35 @@ void handleEstrus() {
   // }
 
   touchClient();
+
+  // --- cycle day from injection_date ---
+  int cycleDay = 0;
+  bool hasInjectionDate = (strlen(sysConfig.injection_date) == 10);
+
+  if (hasInjectionDate && SYS.rtc_ok) {
+
+    DateTime now = getNow();
+
+    // parse YYYY-MM-DD
+    char buf[5];
+    strncpy(buf, sysConfig.injection_date, 4); buf[4] = '\0';
+    int sy = atoi(buf);
+    strncpy(buf, sysConfig.injection_date + 5, 2); buf[2] = '\0';
+    int sm = atoi(buf);
+    strncpy(buf, sysConfig.injection_date + 8, 2); buf[2] = '\0';
+    int sd = atoi(buf);
+
+    DateTime startDt(sy, sm, sd, 0, 0, 0);
+
+    int32_t diffSec = (int32_t)(now.unixtime() - startDt.unixtime());
+
+    if (diffSec >= 0) {
+      cycleDay = (diffSec / 86400) + 1;
+    }
+  }
+
+  // cow estrus typically shows at day 20-21; detection window day 18-22
+  bool isEstrusWindow = hasInjectionDate && (cycleDay >= 18 && cycleDay <= 22);
 
   String json = "{";
 
@@ -1470,6 +1571,19 @@ void handleEstrus() {
 
   json += "\"valid\":";  // agar tahu baseline sudah cukup atau belum
   json += String(SYS.baseline_samples >= sysConfig.min_baseline_samples);
+  json += ",";
+
+  json += "\"injection_date\":\"";
+  json += String(sysConfig.injection_date);
+  json += "\",";
+
+  json += "\"cycle_day\":";
+  json += String(cycleDay);
+  json += ",";
+
+  // is_estrus_window = 1 jika berada di hari 18-22 dari siklus (window deteksi estrus sapi)
+  json += "\"is_estrus_window\":";
+  json += String(isEstrusWindow ? 1 : 0);
 
   json += "}";
 
@@ -1479,6 +1593,7 @@ void handleEstrus() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 void handleStorage() {
@@ -1494,6 +1609,8 @@ void handleStorage() {
       200,
       "application/json",
       "{\"sd\":false}");
+
+    logResponse(200, "sd not ok");
 
     return;
   }
@@ -1546,6 +1663,7 @@ void handleStorage() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 void handleHealth() {
@@ -1599,6 +1717,7 @@ void handleHealth() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 void handleDevice() {
@@ -1658,6 +1777,7 @@ void handleDevice() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 // POST RTC
@@ -1674,6 +1794,8 @@ void handleRTCSync() {
       "application/json",
       "{\"error\":\"invalid json\"}");
 
+    logResponse(400, "invalid json");
+
     return;
   }
 
@@ -1686,6 +1808,8 @@ void handleRTCSync() {
       400,
       "application/json",
       "{\"error\":\"invalid epoch\"}");
+
+    logResponse(400, "invalid epoch");
 
     return;
   }
@@ -1709,6 +1833,7 @@ void handleRTCSync() {
     200,
     "application/json",
     "{\"success\":true}");
+  logResponse(200);
 }
 
 // GET RTC
@@ -1749,6 +1874,7 @@ void handleRTC() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 // DEVELOPMENT ONLY | RESET TIME & STATE RTC
@@ -1769,6 +1895,7 @@ void handleRTCClear() {
     200,
     "application/json",
     "{\"success\":true}");
+  logResponse(200);
 }
 
 
@@ -1787,6 +1914,15 @@ static void logRequest() {
   msg += server.client().remoteIP().toString();
 
   logToFile(msg);
+}
+
+// ===== LOG RESPONSE =====
+static void logResponse(int code, const char* note = nullptr) {
+  if (note) {
+    logToFile("📤 %d %s | %s", code, server.uri().c_str(), note);
+  } else {
+    logToFile("📤 %d %s", code, server.uri().c_str());
+  }
 }
 
 // shortcut: register route + auto-log request
