@@ -158,6 +158,10 @@ static String getHistoricalFile(int daysAgo) {
     d.month(),
     d.day());
 
+  // logToFile(
+  //   "📂 Historical file: %s",
+  //   path);
+
   return String(path);
 }
 
@@ -166,6 +170,10 @@ static String getHistoricalFile(int daysAgo) {
 // Scans all historical files in one pass, accumulating
 // standing/total counts for every partition at once.
 // =====================================================
+bool loadGlobalBaseline(
+  float &baselineRate,
+  uint32_t &baselineSamples) {
+
 
 void triggerBaselineRecompute() {
 
@@ -192,16 +200,26 @@ void triggerBaselineRecompute() {
 
     String filename = getHistoricalFile(d);
 
-    if (filename == "")
-      break;
+    if (d == 0) {
+      filename = "/data/" + todayDateStr() + ".csv";
+    }
 
-    if (!SD.exists(filename))
+    // logToFile("📂 Baseline file: %s", filename.c_str());
+
+    if (filename == "") {
+      break;
+    }
+
+    if (!SD.exists(filename)) {
+      // logToFile("⚠️ File not found");
       continue;
+    }
 
     File f = SD.open(filename);
 
-    if (!f)
+    if (!f) {
       continue;
+    }
 
     // skip header
     f.readStringUntil('\n');
@@ -232,15 +250,19 @@ void triggerBaselineRecompute() {
 
       if (p >= MAX_PARTITIONS)
         continue;
+      }
 
       char s1buf[4];
       char s2buf[4];
 
       if (!getField(line, 3, s1buf, sizeof(s1buf)))
         continue;
+      }
+
 
       if (!getField(line, 4, s2buf, sizeof(s2buf)))
         continue;
+      }
 
       bool isStanding = (atoi(s1buf) && atoi(s2buf));
 

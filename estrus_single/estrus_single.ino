@@ -3,7 +3,7 @@
 #include "rtc_manager.h"
 #include "sd_manager.h"
 #include "web_server.h"
-#include "ina226.h"
+#include "ina_manager.h"
 #include "wifi_manager.h"
 #include "auth.h"
 #include "crypto.h"

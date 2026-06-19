@@ -312,6 +312,16 @@ void handleHistory() {
     return;
   }
 
+  if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
+
+    server.send(
+      503,
+      "application/json",
+      "{\"error\":\"sd_busy\"}");
+
+    return;
+  }
+
   int page = 0;
   int limit = DEFAULT_LIMIT;
 
@@ -1197,8 +1207,8 @@ void handleSetConfig() {
 
     DateTime now = getNow();
 
-    resetRuntimePartitionStats(
-      now.hour() / sysConfig.partition_hours);
+    // resetRuntimePartitionStats(
+    //   now.hour() / sysConfig.partition_hours);
 
     triggerBaselineRecompute();
 
@@ -1681,12 +1691,13 @@ void handleRTCSync() {
 
   epoch += (7UL * 3600UL);
 
-  rtc.adjust(
-    DateTime(epoch));
+  rtc.adjust(DateTime(epoch));
+
+  SYS.last_sync_millis = millis();
 
   SYS.rtc_ever_synced = true;
 
-  saveRTCSyncState(true);
+  saveRTCSyncState(true);  // simpan RTC sync state ke nvs
 
   sysSetRTC(true);  // lanjut write data csv setelah rtc sinkron
 
@@ -1726,6 +1737,10 @@ void handleRTC() {
   json += SYS.rtc_ever_synced
             ? "true"
             : "false";
+  json += ",";
+
+  json += "\"drift_seconds\":";
+  json += SYS.rtc_drift_seconds;
 
   json += "}";
 
@@ -1806,8 +1821,8 @@ void initWebServer() {
   ROUTE("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
 
   // RTC | WAKTU DEVICE
-  ROUTE("/api/rtc/sync", HTTP_POST, handleRTCSync);  // untuk sinkronisasi waktu RTC
-  ROUTE("/api/rtc", HTTP_GET, handleRTC);            // untuk baca waktu RTC
+  ROUTE("/api/rtc/sync", HTTP_POST, handleRTCSync);    // untuk sinkronisasi waktu RTC
+  ROUTE("/api/rtc", HTTP_GET, handleRTC);              // untuk baca waktu RTC
   ROUTE("/api/rtc/clear", HTTP_POST, handleRTCClear);  // DEVELOPMENT ONLY | RESET TIME & STATE RTC
 
   // CONFIG

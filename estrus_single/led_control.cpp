@@ -120,7 +120,7 @@ void ledTask(void *pv) {
       switch (ledPattern) {
 
         case LED_IDLE:
-          logToFile("💡 LED -> IDLE (GREEN)");
+          logToFile("💡 LED -> SYSTEM OK (GREEN)");
           break;
 
         case LED_ESTRUS:

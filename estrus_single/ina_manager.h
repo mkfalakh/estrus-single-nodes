@@ -1,7 +1,9 @@
 #pragma once
 #include <Arduino.h>
 
-void initINA226();
+bool initINA226();
 float readVoltage();
 float readCurrent();
 float readPower();
+
+bool checkINAHealth();

@@ -82,8 +82,6 @@ void acknowledgeAlarm() {
   sysSetAlarm(false);
 
   buzzerPattern = BUZZER_STOP_CONFIRM;
-
-  logToFile("🔕 Estrus atau Fault tidak terdeteksi. Alarm dihentikan sementara");
 }
 
 // BUZZER TASK
@@ -218,6 +216,28 @@ void buzzerTask(void *pv) {
 
         buzzerOff();
         vTaskDelay(pdMS_TO_TICKS(80));
+
+        buzzerOn();
+        vTaskDelay(pdMS_TO_TICKS(80));
+
+        buzzerOff();
+
+        buzzerPattern = BUZZER_NONE;
+
+        continue;
+
+      case BUZZER_LONG_PRESS:
+
+        buzzerOn();
+        vTaskDelay(pdMS_TO_TICKS(80));
+
+        buzzerOff();
+        vTaskDelay(pdMS_TO_TICKS(80));
+
+        buzzerOn();
+        vTaskDelay(pdMS_TO_TICKS(80));
+
+        buzzerOff();
 
         buzzerOn();
         vTaskDelay(pdMS_TO_TICKS(80));

@@ -156,7 +156,6 @@ void loggerTask(void *pv) {
             f.close();
 
             giveSDMutex();
-
           }
         }
 

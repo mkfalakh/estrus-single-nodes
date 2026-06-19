@@ -1,4 +1,4 @@
-#include "ina226.h"
+#include "ina_manager.h"
 #include "config.h"
 #include "system_state.h"
 #include "logger.h"
@@ -17,17 +17,15 @@ INA226_WE ina226(INA226_I2C_ADDRESS);
 // voltCorrection = V multimeter / V ina226 = 0.972
 float voltCorrection = 0.972;
 
-void initINA226() {
+bool initINA226() {
   Wire.begin(I2C_SDA, I2C_SCL);
 
   if (!ina226.init()) {
     logToFile("❌ INA init gagal!");
     sysSetINA(false);
+    return false;
     // while (1)
     //   ;
-  } else {
-    logToFile("✅ INA OK");
-    sysSetINA(true);
   }
 
   // Optional: averaging biar stabil
@@ -38,6 +36,10 @@ void initINA226() {
   // 🔥 KALIBRASI
   ina226.setResistorRange(0.1, 0.9);  // Rshunt=0.1Ω, Imax= 0.1/100mA|0.01/10mA
   // ina226.setCorrectionFactor(0.972);
+
+  logToFile("✅ INA OK");
+  sysSetINA(true);
+  return true;
 }
 
 float readVoltage() {
@@ -53,4 +55,26 @@ float readCurrent() {
 float readPower() {
   // bus power (mW)
   return ina226.getBusPower();
+}
+
+
+// check INA health
+bool checkINAHealth() {
+
+  Wire.beginTransmission(INA226_I2C_ADDRESS);
+
+  uint8_t err = Wire.endTransmission();
+
+  if (err != 0) {
+
+    logToFile("⚠️ INA Wire error!");
+
+    sysSetINA(false);
+
+    return false;
+  }
+
+  sysSetINA(true);
+
+  return true;
 }

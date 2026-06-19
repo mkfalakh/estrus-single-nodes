@@ -181,12 +181,12 @@ void loadConfig() {
       sysConfig.alarm_enabled = prefs.getBool("alarm", true);
 
       // Model Estrus
-      sysConfig.record_interval_sec = prefs.getUShort("record", 30);
-      sysConfig.retention_days = prefs.getUChar("retain", 3);
-      sysConfig.partition_hours = prefs.getUChar("part", 3);
+      sysConfig.record_interval_sec = prefs.getUShort("record", 10);
+      sysConfig.retention_days = prefs.getUChar("retain", 7);
+      sysConfig.partition_hours = prefs.getUChar("part", 1);
       sysConfig.estrus_threshold_pct = prefs.getFloat("estrus", 6.0f);
       sysConfig.stop_after_alarm = prefs.getBool("stop_alarm", true);
-      sysConfig.min_baseline_samples = prefs.getUShort("base_sample", 300);
+      sysConfig.min_baseline_samples = prefs.getUShort("base_sample", 10);
       sysConfig.dirty_timeout_samples = prefs.getUShort("dirty_sample", 240);
 
       // Battery
@@ -222,12 +222,12 @@ void loadConfig() {
     sysConfig.alarm_enabled = true;    // ingin alarm aktif/mati
 
     // Model Estrus
-    sysConfig.record_interval_sec = 30;     // 10 - 3600
-    sysConfig.retention_days = 3;           // 1 - 14
-    sysConfig.partition_hours = 3;          // 1 - 24
+    sysConfig.record_interval_sec = 10;     // 10 - 3600
+    sysConfig.retention_days = 7;           // 1 - 14
+    sysConfig.partition_hours = 1;          // 1 - 24
     sysConfig.estrus_threshold_pct = 6.0f;  // 0.1 - 100 %
     sysConfig.stop_after_alarm = true;
-    sysConfig.min_baseline_samples = 300;   // 10 - 1000 | untuk validasi baseline
+    sysConfig.min_baseline_samples = 10;   // 10 - 1000 | untuk validasi baseline
     sysConfig.dirty_timeout_samples = 240;  // 10 - 1000 | sample untuk mengetahui sensor kotor atau tidak
 
     // Battery
@@ -313,5 +313,7 @@ void resetConfig() {
 
   saveConfig();
 
-  logToFile("♻️ Config reset");
+  logToFile("♻️ Config reset factory");
+
+  ESP.restart();
 }
