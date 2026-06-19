@@ -1920,7 +1920,7 @@ static void logRequest() {
 }
 
 // ===== LOG RESPONSE =====
-static void logResponse(int code, const char* note = nullptr) {
+static void logResponse(int code, const char* note) {
   if (note) {
     logToFile("📤 %d %s | %s", code, server.uri().c_str(), note);
   } else {
