@@ -1312,13 +1312,6 @@ void handleSetConfig() {
   // partition berubah
   if (partitionChanged) {
 
-    DateTime now = getNow();
-
-    // resetRuntimePartitionStats(
-    //   now.hour() / sysConfig.partition_hours);
-
-    triggerBaselineRecompute();
-
     logToFile(
       "📊 Partition stats reset. | updated: %u hours",
       sysConfig.partition_hours);
@@ -1343,8 +1336,6 @@ void handleSetConfig() {
   // retention days berubah
   if (retentionChanged) {
 
-    triggerBaselineRecompute();
-
     logToFile(
       "🗂 Retention days updated: %u days",
       sysConfig.retention_days);
@@ -1360,8 +1351,6 @@ void handleSetConfig() {
 
   // min baseline windows berubah
   if (baselineWindowChanged) {
-
-    triggerBaselineRecompute();
 
     logToFile(
       "🔁 min_baseline_windows updated: %d",
@@ -1457,6 +1446,13 @@ void handleSetConfig() {
   logResponse(200, needRestart ? "restart pending" : "ok");
 
   // ========================
+  // DEFERRED HEAVY WORK (after response sent to avoid client timeout)
+  // ========================
+  if (partitionChanged || retentionChanged || baselineWindowChanged) {
+    triggerBaselineRecompute();
+  }
+
+  // ========================
   // RESTART
   // ========================
   if (needRestart) {
@@ -1518,7 +1514,7 @@ void handleLatest() {
   // POWER
   // ========================
   auto safeFloat = [](float v) -> String {
-    if (isnan(v) || isinf(v)) return "null";
+    if (isnan(v) || isinf(v)) return "0.00";
     return String(v, 2);
   };
 
@@ -1532,7 +1528,7 @@ void handleLatest() {
   json += "\"battery_percent\":" + safeFloat(SYS.battery_pct)  + ",";
 
   float _bdays = powerStats.estimated_days_left;
-  json += "\"battery_days\":"    + (isnan(_bdays) || isinf(_bdays) ? String("null") : String(_bdays, 1)) + ",";
+  json += "\"battery_days\":"    + (isnan(_bdays) || isinf(_bdays) ? String("0.0") : String(_bdays, 1)) + ",";
   json += "\"battery_date\":\"" + String(powerStats.estimated_date) + "\",";
 
   // ========================
@@ -1599,7 +1595,7 @@ void handleEstrus() {
   json += ",";
 
   auto safeFloat1 = [](float v) -> String {
-    if (isnan(v) || isinf(v)) return "null";
+    if (isnan(v) || isinf(v)) return "0.0";
     return String(v, 1);
   };
 
@@ -1640,6 +1636,14 @@ void handleEstrus() {
   // is_estrus_window = 1 jika berada di hari 18-21 dari siklus (window deteksi estrus sapi)
   json += "\"is_estrus_window\":";
   json += String(isEstrusWindow ? 1 : 0);
+  json += ",";
+
+  json += "\"window_count\":";
+  json += String(getSlidingWindowCount());
+  json += ",";
+
+  json += "\"window_size\":";
+  json += String(getSlidingWindowSize());
 
   json += "}";
 

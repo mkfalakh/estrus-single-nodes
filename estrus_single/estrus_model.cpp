@@ -3,7 +3,10 @@
 #include "rtc_manager.h"
 #include "system_state.h"
 #include "storage_stats.h"
+#include "sd_manager.h"
+#include "csv_reverse.h"
 #include "logger.h"
+#include <SD.h>
 
 // =====================================================
 // SLIDING WINDOW CONFIG
@@ -11,7 +14,6 @@
 // =====================================================
 
 #define DETECT_WINDOW_MAX  540   // max buffer entries (covers 1.5 h at 10 s interval)
-#define DETECT_WINDOW_H    1.5f  // sliding window duration in hours
 #define MAX_PARTITIONS     24
 
 static bool     slidingBuf[DETECT_WINDOW_MAX];   // sensor2_state samples
@@ -25,6 +27,8 @@ static uint8_t  lastPartition = 255;
 // =====================================================
 // HELPERS
 // =====================================================
+
+#define DETECT_WINDOW_H  1.5f  // sliding window duration in hours
 
 static uint16_t windowSize()
 {
@@ -49,6 +53,126 @@ void resetSlidingWindow()
 {
   bufHead  = 0;
   bufCount = 0;
+}
+
+uint16_t getSlidingWindowCount() { return bufCount; }
+uint16_t getSlidingWindowSize()  { return windowSize(); }
+
+// =====================================================
+// PREFILL SLIDING WINDOW FROM CSV (called once at boot)
+// Reads the last N clean records from today's CSV
+// (falls back to yesterday if today has insufficient data)
+// so the window is full immediately after reboot.
+// Must be called before startTasks() — no mutex needed.
+// =====================================================
+
+static int prefillFromFile(const String &path, uint16_t need,
+                            char lines[][160])
+{
+  if (!SD.exists(path)) return 0;
+  File f = SD.open(path);
+  if (!f) return 0;
+  bool hasNext = false;
+  int got = readCsvPage(f, lines, 0, need, hasNext);
+  f.close();
+  return got;
+}
+
+static bool parseField(const char *line, int idx, char *out, size_t outSize)
+{
+  int cur = 0;
+  const char *s = line, *e = line;
+  while (*e) {
+    if (*e == ',' || *e == '\n') {
+      if (cur == idx) {
+        size_t len = e - s;
+        if (len >= outSize) len = outSize - 1;
+        memcpy(out, s, len);
+        out[len] = '\0';
+        return true;
+      }
+      cur++;
+      s = e + 1;
+    }
+    e++;
+  }
+  if (cur == idx) {
+    size_t len = strlen(s);
+    if (len >= outSize) len = outSize - 1;
+    memcpy(out, s, len);
+    out[len] = '\0';
+    return true;
+  }
+  return false;
+}
+
+void prefillSlidingWindow()
+{
+  if (!SYS.rtc_ok || !SYS.sd_ok) return;
+
+  uint16_t need = windowSize();
+  if (need == 0) return;
+
+  // readCsvPage returns newest-first; collect into temp array then inject
+  // oldest-first so the ring buffer order matches live ingestion order.
+  // Allocate on heap to avoid blowing the setup() stack (~160 * need bytes).
+  char (*lines)[160] = (char (*)[160])malloc(need * 160);
+  if (!lines) {
+    logToFile("⚠️ prefill: malloc failed");
+    return;
+  }
+
+  DateTime now = getNow();
+  char todayPath[32], yestPath[32];
+  snprintf(todayPath, sizeof(todayPath), "/data/%04d-%02d-%02d.csv",
+           now.year(), now.month(), now.day());
+  DateTime yest(now.unixtime() - 86400UL);
+  snprintf(yestPath, sizeof(yestPath), "/data/%04d-%02d-%02d.csv",
+           yest.year(), yest.month(), yest.day());
+
+  int got = prefillFromFile(todayPath, need, lines);
+
+  // if today not enough, top up from yesterday
+  if ((uint16_t)got < need) {
+    uint16_t remaining = need - (uint16_t)got;
+    char (*extra)[160] = (char (*)[160])malloc(remaining * 160);
+    if (extra) {
+      int extra_got = prefillFromFile(yestPath, remaining, extra);
+      // append yesterday rows after today rows
+      for (int i = 0; i < extra_got && got < (int)need; i++) {
+        memcpy(lines[got++], extra[i], 160);
+      }
+      free(extra);
+    }
+  }
+
+  if (got == 0) {
+    free(lines);
+    logToFile("⚠️ prefill: no CSV data available");
+    return;
+  }
+
+  // inject oldest-first (readCsvPage gives newest at index 0, so reverse)
+  char s2buf[4], d1buf[4], d2buf[4];
+  int injected = 0, skipped = 0;
+
+  for (int i = got - 1; i >= 0; i--) {
+    const char *row = lines[i];
+
+    bool d1 = parseField(row, 5, d1buf, sizeof(d1buf)) && atoi(d1buf);
+    bool d2 = parseField(row, 6, d2buf, sizeof(d2buf)) && atoi(d2buf);
+
+    if (d1 || d2) { skipped++; continue; }
+
+    bool s2 = parseField(row, 4, s2buf, sizeof(s2buf)) && atoi(s2buf);
+    updateSensor2(s2, false, false);
+    injected++;
+  }
+
+  free(lines);
+
+  logToFile("📂 prefill: injected=%d skipped_dirty=%d window=%d/%d",
+            injected, skipped, bufCount, need);
 }
 
 void updateSensor2(bool s2, bool d1, bool d2)

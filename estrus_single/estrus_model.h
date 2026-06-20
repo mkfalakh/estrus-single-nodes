@@ -29,3 +29,11 @@ void checkTimeTransitions();
 // Evaluate estrus from the current sliding window state.
 // Returns a zeroed result if the window is not yet full or RTC is unavailable.
 EstrusResult evaluateEstrus();
+
+// Debug helpers: current fill count and required size of the sliding window.
+uint16_t getSlidingWindowCount();
+uint16_t getSlidingWindowSize();
+
+// Prefill the sliding window from the last N clean CSV records at boot.
+// Call once in setup() after triggerBaselineRecompute(), before startTasks().
+void prefillSlidingWindow();
