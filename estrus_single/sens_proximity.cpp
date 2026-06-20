@@ -16,79 +16,73 @@
 
 static bool proxActiveLow = true;
 
-static uint16_t sensor1StableCount = 0;
-static uint16_t sensor2StableCount = 0;
-
-static bool sensor1Dirty = false;
-static bool sensor2Dirty = false;
+static uint16_t sensor1ActiveSince = 0;
+static uint16_t sensor2ActiveSince = 0;
 
 static bool lastSensor1 = false;
 static bool lastSensor2 = false;
-
-bool isSensor1Dirty() {
-  return sensor1Dirty;
-}
-
-bool isSensor2Dirty() {
-  return sensor2Dirty;
-}
 
 // ========================
 // CHECK SENSOR DIRTY
 // ========================
 void updateDirtyDetection(bool s1, bool s2) {
 
+  uint32_t dirtyMs =
+    ((uint32_t)sysConfig.dirty_timeout_hours * 3600000UL);
+
+  // ==========================
   // SENSOR 1
-  if (s1 == lastSensor1) {
+  // ==========================
 
-    if (sensor1StableCount < UINT16_MAX) {
-      sensor1StableCount++;
+  if (s1) {
+
+    if (sensor1ActiveSince == 0) {
+
+      sensor1ActiveSince = millis();
+    }
+
+    if (!SYS.sensor1_dirty && millis() - sensor1ActiveSince >= dirtyMs) {
+
+      SYS.sensor1_dirty = true;
     }
 
   } else {
 
-    sensor1StableCount = 0;
-
-    sensor1Dirty = false;
-
-    lastSensor1 = s1;
+    sensor1ActiveSince = 0;
+    SYS.sensor1_dirty = false;
   }
 
-  if (sensor1StableCount >= sysConfig.dirty_timeout_samples) {
-
-    sensor1Dirty = true;
-  }
-
+  // ==========================
   // SENSOR 2
-  if (s2 == lastSensor2) {
+  // ==========================
 
-    if (sensor2StableCount < UINT16_MAX) {
-      sensor2StableCount++;
+  if (s2) {
+
+    if (sensor2ActiveSince == 0) {
+
+      sensor2ActiveSince = millis();
+    }
+
+    if (!SYS.sensor2_dirty && millis() - sensor2ActiveSince >= dirtyMs) {
+
+      SYS.sensor2_dirty = true;
     }
 
   } else {
 
-    sensor2StableCount = 0;
-
-    sensor2Dirty = false;
-
-    lastSensor2 = s2;
-  }
-
-  if (sensor2StableCount >= sysConfig.dirty_timeout_samples) {
-
-    sensor2Dirty = true;
+    sensor2ActiveSince = 0;
+    SYS.sensor2_dirty = false;
   }
 }
 
 // RESET DIRTY DETECTION
 void resetDirtyDetection() {
 
-  sensor1Dirty = false;
-  sensor2Dirty = false;
+  SYS.sensor1_dirty = false;
+  SYS.sensor2_dirty = false;
 
-  sensor1StableCount = 0;
-  sensor2StableCount = 0;
+  sensor1ActiveSince = 0;
+  sensor2ActiveSince = 0;
 }
 
 // ========================
@@ -122,10 +116,13 @@ void sensorTask(void *pv) {
       bool s1 = readProx1();
       bool s2 = readProx2();
 
+      // cek perubahan state sensor
+      Serial.printf("[STATE] s1: %d | s2: %d\n", s1, s2);
+
       updateDirtyDetection(s1, s2);
 
-      bool d1 = isSensor1Dirty();
-      bool d2 = isSensor2Dirty();
+      bool d1 = sysIsSensor1Dirty();
+      bool d2 = sysIsSensor2Dirty();
 
       // ==========================
       // SENSOR 1 DIRTY EVENT
@@ -134,23 +131,33 @@ void sensorTask(void *pv) {
 
         if (d1) {
 
-          dirty1Since = getNow();
+          if (SYS.rtc_ok) {
+            dirty1Since = getNow();
+          }
 
           logToFile(
             "🟠 Sensor 1 dirty detected");
 
         } else {
 
-          TimeSpan span =
-            getNow() - dirty1Since;
+          if (SYS.rtc_ok) {
 
-          logToFile(
-            "🟢 Sensor 1 dirty cleared "
-            "(%ld d %ld h %ld m)",
+            TimeSpan span =
+              getNow() - dirty1Since;
 
-            span.days(),
-            span.hours(),
-            span.minutes());
+            logToFile(
+              "🟢 Sensor 1 dirty cleared "
+              "(%ld d %ld h %ld m)",
+
+              span.days(),
+              span.hours(),
+              span.minutes());
+
+          } else {
+
+            logToFile(
+              "🟢 Sensor 1 dirty cleared");
+          }
         }
 
         lastD1 = d1;
@@ -163,30 +170,41 @@ void sensorTask(void *pv) {
 
         if (d2) {
 
-          dirty2Since = getNow();
+          if (SYS.rtc_ok) {
+            dirty2Since = getNow();
+          }
 
           logToFile(
             "🟠 Sensor 2 dirty detected");
 
         } else {
 
-          TimeSpan span =
-            getNow() - dirty2Since;
+          if (SYS.rtc_ok) {
 
-          logToFile(
-            "🟢 Sensor 2 dirty cleared "
-            "(%ld d %ld h %ld m)",
+            TimeSpan span =
+              getNow() - dirty2Since;
 
-            span.days(),
-            span.hours(),
-            span.minutes());
+            logToFile(
+              "🟢 Sensor 2 dirty cleared "
+              "(%ld d %ld h %ld m)",
+
+              span.days(),
+              span.hours(),
+              span.minutes());
+
+          } else {
+
+            logToFile(
+              "🟢 Sensor 2 dirty cleared");
+          }
         }
 
         lastD2 = d2;
       }
 
       // set sensor dirty
-      sysSetSensorDirty(d1 || d2);
+      sysSetSensor1Dirty(d1);
+      sysSetSensor2Dirty(d2);
 
       // standing definition
       bool standing = (s1 || s2);
@@ -267,8 +285,6 @@ void sensorTask(void *pv) {
         s2,
         d1,
         d2);
-
-      sysSetSensorHealth(!(d1 && d2));
 
       sysSetPower(
         powerStats.percentage,
