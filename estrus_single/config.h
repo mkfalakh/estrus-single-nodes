@@ -41,8 +41,6 @@ Dashboard Login: admin | estrus2026
 #define LED_R 16 // JANGAN DIUBAH
 #define LED_G 17 // JANGAN DIUBAH
 #define LED_B 18 // JANGAN DIUBAH
-#define LED_FREQ 5000
-#define LED_RES 8
 
 // INA226
 #define INA226_I2C_ADDRESS 0x40 // JANGAN DIUBAH
