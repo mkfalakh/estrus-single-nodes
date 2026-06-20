@@ -93,25 +93,25 @@ void loop() {
   // DEBUG SYSTEM
   // =========================
   static unsigned long lastDebug = 0;
-  if (millis() - lastDebug > 60000) {
+  if (millis() - lastDebug > 30000) {
 
     // Serial.println(
     //   "LOGGER STACK: %u",
     //   uxTaskGetStackHighWaterMark(NULL));  // jika hasil < 500 = stack hampir habis
 
-    Serial.println("=========  SYSTEM STATE  ==========");
+    Serial.println("=========  SYSTEM STATE  ==========\n");
 
-    Serial.printf("ERR: %d | RTCSync: %d | SD: %d | RTC: %d | SENSOR: %d | ESTRUS: %d | BUZZ: %d",
-                  sysIsSystemFault(), SYS.rtc_ever_synced, SYS.sd_ok, SYS.rtc_ok, SYS.sensor_ok, sysIsEstrus(), sysIsAlarm());
+    Serial.printf("ERR: %d | RTCSync: %d | SD: %d | RTC: %d | INA: %d | ESTRUS: %d | BUZZ: %d",
+                  sysIsSystemFault(), SYS.rtc_ever_synced, SYS.sd_ok, SYS.rtc_ok, SYS.ina_ok, sysIsEstrus(), sysIsAlarm());
 
     Serial.println("========== RAM & Storage ==========");
 
     // checkFreeSD();
 
-    Serial.printf("UsedHeap: %d | FreeHeap: %d | HeapSize: %d",
+    Serial.printf("UsedHeap: %d | FreeHeap: %d | HeapSize: %d\n",
                   ESP.getHeapSize() - ESP.getFreeHeap(), ESP.getFreeHeap(), ESP.getHeapSize());
 
-    Serial.printf("UsedPSRAM: %d | FreePSRAM: %d | PSRAMSize: %d",
+    Serial.printf("UsedPSRAM: %d | FreePSRAM: %d | PSRAMSize: %d\n",
                   ESP.getPsramSize() - ESP.getFreePsram(), ESP.getFreePsram(), ESP.getPsramSize());
 
     // Serial.println("===================================");
