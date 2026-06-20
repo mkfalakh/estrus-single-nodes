@@ -7,8 +7,6 @@ SystemState SYS = {
   .sd_ok = false,
   .rtc_ok = false,
   .ina_ok = false,
-  .sensor_ok = false,
-  .sensor_dirty = false,
 
   .battery_pct = 0,
   .voltage = 0,
@@ -55,14 +53,12 @@ void sysSetINA(bool ok) {
   SYS.ina_ok = ok;
 }
 
-void sysSetSensorHealth(bool ok) {
-
-  SYS.sensor_ok = ok;
+void sysSetSensor1Dirty(bool d1) {
+  SYS.sensor1_dirty = d1;
 }
 
-void sysSetSensorDirty(bool dirty) {
-
-  SYS.sensor_dirty = dirty;
+void sysSetSensor2Dirty(bool d2) {
+  SYS.sensor2_dirty = d2;
 }
 
 void sysSetPower(float pct, float v, float c, float p) {
@@ -157,8 +153,12 @@ bool sysIsEstrus() {
   return SYS.estrus;
 }
 
-bool sysIsSensorDirty() {
-  return SYS.sensor1_dirty || SYS.sensor2_dirty;
+bool sysIsSensor1Dirty() {
+  return SYS.sensor1_dirty;
+}
+
+bool sysIsSensor2Dirty() {
+  return SYS.sensor2_dirty;
 }
 
 // MODEL
