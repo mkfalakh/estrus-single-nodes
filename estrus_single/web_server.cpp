@@ -1590,7 +1590,7 @@ void handleEstrus() {
     }
   }
 
-  bool isEstrusWindow = hasInjectionDate && (cycleDay >= 18 && cycleDay <= 24);
+  bool isEstrusWindow = hasInjectionDate && (cycleDay >= 18 && cycleDay <= 21);
 
   String json = "{";
 
@@ -1637,7 +1637,7 @@ void handleEstrus() {
   json += String(cycleDay);
   json += ",";
 
-  // is_estrus_window = 1 jika berada di hari 18-24 dari siklus (window deteksi estrus sapi)
+  // is_estrus_window = 1 jika berada di hari 18-21 dari siklus (window deteksi estrus sapi)
   json += "\"is_estrus_window\":";
   json += String(isEstrusWindow ? 1 : 0);
 
