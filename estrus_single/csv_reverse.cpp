@@ -53,7 +53,7 @@ int readCsvPage(File &file,
   if (!file || limit <= 0 || page < 0) return 0;
 
   const int CHUNK   = 512;
-  const int LINE_MAX = 159;
+  const int CSV_LINE_MAX = 159;
 
   int fileSize = file.size();
   if (fileSize <= 0) return 0;
@@ -63,7 +63,7 @@ int readCsvPage(File &file,
 
   // rev accumulates the current line's characters in REVERSE order as we
   // scan the file backwards; we flip in-place when a '\n' is found.
-  char rev[LINE_MAX + 1] __attribute__((aligned(4)));
+  char rev[CSV_LINE_MAX + 1] __attribute__((aligned(4)));
   int  revLen = 0;
 
   int foundLines  = 0;
@@ -101,8 +101,8 @@ int readCsvPage(File &file,
           if (!isHeader && csvLineMatchesDevice(rev)) {
 
             if (foundLines >= startIdx && foundLines < endIdx) {
-              strncpy(lines[copiedLines], rev, LINE_MAX);
-              lines[copiedLines][LINE_MAX] = '\0';
+              strncpy(lines[copiedLines], rev, CSV_LINE_MAX);
+              lines[copiedLines][CSV_LINE_MAX] = '\0';
               copiedLines++;
             }
 
@@ -118,7 +118,7 @@ int readCsvPage(File &file,
         }
 
       } else if (c != '\r') {
-        if (revLen < LINE_MAX) rev[revLen++] = c;
+        if (revLen < CSV_LINE_MAX) rev[revLen++] = c;
       }
     }
 
@@ -140,8 +140,8 @@ int readCsvPage(File &file,
     if (!isHeader && csvLineMatchesDevice(rev)) {
 
       if (foundLines >= startIdx && foundLines < endIdx) {
-        strncpy(lines[copiedLines], rev, LINE_MAX);
-        lines[copiedLines][LINE_MAX] = '\0';
+        strncpy(lines[copiedLines], rev, CSV_LINE_MAX);
+        lines[copiedLines][CSV_LINE_MAX] = '\0';
         copiedLines++;
       }
 
