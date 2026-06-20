@@ -53,6 +53,29 @@
 ### Changed — System state (system_state.h/.cpp)
 - `baseline_samples` (uint32_t) replaced by `baseline_windows` (uint16_t).
 
+### Added — Prefill sliding window from CSV (estrus_model.cpp)
+- `prefillSlidingWindow()` dipanggil satu kali di `setup()` setelah `triggerBaselineRecompute()`, sebelum task sensor dimulai.
+- Membaca N record terakhir dari CSV hari ini (fallback ke kemarin jika kurang) lalu menyuntikkannya ke `slidingBuf` urutan oldest-first, sehingga buffer langsung penuh setelah reboot tanpa menunggu 1,5 jam data live.
+- Record dengan `sensor1_dirty=1` atau `sensor2_dirty=1` dilewati (tidak diinjeksi).
+- Buffer dialokasikan di heap (`malloc`) agar tidak memenuhi stack `setup()`.
+- Log saat boot: `📂 prefill: injected=N skipped_dirty=M window=N/N`.
+
+### Added — Window count di API (web_server.cpp)
+- `GET /api/node/estrus` kini menyertakan dua field baru:
+  - `window_count` — jumlah sampel yang sudah ada di buffer saat ini
+  - `window_size` — kapasitas penuh buffer (1,5 jam ÷ `record_interval_sec`)
+- Android dapat menampilkan progress warmup: `window_count / window_size`.
+- `valid=true` dan `baseline_windows` terisi dapat muncul langsung setelah reboot jika data CSV tersedia.
+
+### Fixed — NaN/Inf float di JSON (web_server.cpp)
+- `handleLatest()`: `voltage`, `current`, `power`, `battery_percent` mengembalikan `"0.00"` (bukan `"null"`) saat nilai NaN/Inf.
+- `handleLatest()`: `battery_days` mengembalikan `"0.0"` (bukan `"null"`) saat nilai NaN/Inf.
+- `handleEstrus()`: `current_rate`, `baseline_rate`, `deviation_pct` mengembalikan `"0.0"` (bukan `"null"`) saat nilai NaN/Inf.
+
+### Fixed — triggerBaselineRecompute() dipanggil setelah response (web_server.cpp)
+- Sebelumnya `handleSetConfig()` memanggil `triggerBaselineRecompute()` inline di tengah proses, sehingga respons HTTP bisa timeout pada SD card lambat.
+- Sekarang recompute ditunda ke akhir handler (setelah semua perubahan config diproses), hanya dipanggil jika `partitionChanged`, `retentionChanged`, atau `baselineWindowChanged`.
+
 ### Changed — API spec notes (docs/api-specs.md)
 - `estrus_threshold_pct` documented as z_threshold alias: `z_threshold = val / 100 × 4.0`.
 - `deviation_pct` in `/api/node/estrus` documented as `(z / z_threshold) × 100`.
