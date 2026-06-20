@@ -67,6 +67,12 @@
 - Android dapat menampilkan progress warmup: `window_count / window_size`.
 - `valid=true` dan `baseline_windows` terisi dapat muncul langsung setelah reboot jika data CSV tersedia.
 
+### Fixed — Double ×100 pada current_rate dan baseline_rate (web_server.cpp)
+- `handleEstrus()` mengalikan `SYS.current_rate` dan `SYS.baseline_rate` dengan `100.0f`, padahal nilai tersebut sudah dalam persen dari `estrus_model.cpp` (`on_frac × 100`).
+- Akibatnya nilai muncul ×100 terlalu besar (contoh: `2370.4` seharusnya `23.7`).
+- Fix: hapus `* 100.0f` di kedua field; nilai kini dibaca langsung dari `SYS`.
+- Catatan: `deviation_pct` negatif adalah perilaku normal — artinya aktivitas sapi di bawah baseline, bukan bug.
+
 ### Fixed — NaN/Inf float di JSON (web_server.cpp)
 - `handleLatest()`: `voltage`, `current`, `power`, `battery_percent` mengembalikan `"0.00"` (bukan `"null"`) saat nilai NaN/Inf.
 - `handleLatest()`: `battery_days` mengembalikan `"0.0"` (bukan `"null"`) saat nilai NaN/Inf.
