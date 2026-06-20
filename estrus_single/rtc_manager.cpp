@@ -3,6 +3,7 @@
 #include "logger.h"
 #include "config_runtime.h"
 #include <Preferences.h>
+#include <sys/time.h>
 
 RTC_DS3231 rtc;
 
@@ -137,6 +138,8 @@ bool initRTC() {
 
   sysSetRTC(true);
 
+  syncSystemClock();
+
   Serial.println(
     "✅ RTC OK");
 
@@ -197,6 +200,16 @@ void adjustRTC() {
     rtc.lostPower());
 }
 
+
+// Sync ESP32 system clock from RTC so SD FAT layer writes correct file timestamps.
+// Call after initRTC() and after every rtc.adjust().
+void syncSystemClock() {
+  DateTime now = rtc.now();
+  struct timeval tv;
+  tv.tv_sec  = (time_t)now.unixtime();
+  tv.tv_usec = 0;
+  settimeofday(&tv, nullptr);
+}
 
 // reset rtc time to 2000-01-01 01:01:01 | DEVELOPMENT ONLY
 void resetRTC() {

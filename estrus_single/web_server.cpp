@@ -248,7 +248,7 @@ void handleLogout() {
 void handleLogin() {
 
   if (!server.hasArg("user") || !server.hasArg("pass")) {
-    server.send(400, "application/json", "{\"success\":false}");
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"missing user or pass\"}");
     logResponse(400, "missing args");
     return;
   }
@@ -318,7 +318,7 @@ void handleHistory() {
     server.send(
       400,
       "application/json",
-      "{\"error\":\"invalid date\"}");
+      "{\"error\":\"invalid date\",\"field\":\"date\",\"reason\":\"must be YYYY-MM-DD\"}");
 
     logResponse(400, "invalid date");
 
@@ -577,22 +577,35 @@ void handleAlarmStart() {
 // ===== HANDLE DOWNLOAD BUTTON =====
 
 // Returns true if columns 0 (device_id) and 1 (animal_id) match sysConfig.
+// Uses byte-by-byte compare — ROM strncmp uses L32I word loads and crashes
+// with LoadStoreAlignment when the pointer is not 4-byte aligned.
 static bool matchesDeviceFilter(const char *line) {
-  const char *p = line;
-  const char *d0 = p;
-  while (*p && *p != ',') p++;
-  int d0len = p - d0;
-  if (!*p) return false;
-  p++;
-  const char *d1 = p;
-  while (*p && *p != ',') p++;
-  int d1len = p - d1;
-
   int nlen = strlen(sysConfig.node_id);
   int alen = strlen(sysConfig.animal_id);
 
-  if (nlen > 0 && (d0len != nlen || strncmp(d0, sysConfig.node_id, nlen) != 0)) return false;
-  if (alen > 0 && (d1len != alen || strncmp(d1, sysConfig.animal_id, alen) != 0)) return false;
+  const char *p = line;
+
+  // field 0: device_id
+  if (nlen > 0) {
+    for (int i = 0; i < nlen; i++, p++) {
+      if (*p != sysConfig.node_id[i]) return false;
+    }
+    if (*p != ',') return false;
+    p++;
+  } else {
+    while (*p && *p != ',') p++;
+    if (!*p) return false;
+    p++;
+  }
+
+  // field 1: animal_id
+  if (alen > 0) {
+    for (int i = 0; i < alen; i++, p++) {
+      if (*p != sysConfig.animal_id[i]) return false;
+    }
+    if (*p != ',' && *p != '\0') return false;
+  }
+
   return true;
 }
 
@@ -641,6 +654,12 @@ void handleDownload() {
     "device_id,animal_id,timestamp,sensor1_state,sensor2_state,"
     "sensor1_dirty,sensor2_dirty,deviation,estrus,voltage,current,battery_pct\r\n");
 
+  // Send buffer: collect per-minute winners while holding SD mutex,
+  // then release mutex and do HTTP I/O without holding it.
+  static const int SEND_BUF_LINES = 32;
+  char sendBuf[SEND_BUF_LINES][160];
+  int  sendCount = 0;
+
   char lineBuf[160];
   char prevLine[160];
   char prevMinKey[17];
@@ -657,60 +676,81 @@ void handleDownload() {
 
     String filename = "/data/" + String(dateStr) + ".csv";
 
-    if (!takeSDMutex("DOWNLOAD", pdMS_TO_TICKS(3000))) continue;
+    bool fileDone = false;
+    long filePos  = 0;
 
-    File file = SD.open(filename);
+    // Read file in chunks: take mutex → read batch → give mutex → send batch
+    while (!fileDone) {
 
-    if (!file) {
-      sysSetSD(false);
-      giveSDMutex();
-      continue;
-    }
+      if (!takeSDMutex("DOWNLOAD", pdMS_TO_TICKS(3000))) break;
 
-    sysSetSD(true);
+      File file = SD.open(filename);
+      if (!file) {
+        sysSetSD(false);
+        giveSDMutex();
+        break;
+      }
+      sysSetSD(true);
 
-    bool firstLine = true;
-    prevLine[0]   = '\0';
-    prevMinKey[0] = '\0';
+      if (filePos == 0) {
+        prevLine[0]   = '\0';
+        prevMinKey[0] = '\0';
+      }
+      file.seek(filePos);
 
-    while (file.available()) {
+      sendCount = 0;
+      bool firstLine = (filePos == 0);
 
-      int len = file.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
-      lineBuf[len] = '\0';
+      // Read up to SEND_BUF_LINES winners per mutex hold
+      while (file.available() && sendCount < SEND_BUF_LINES) {
 
-      if (len > 0 && lineBuf[len - 1] == '\r') lineBuf[--len] = '\0';
-      if (len == 0) continue;
+        int len = file.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
+        lineBuf[len] = '\0';
 
-      if (firstLine) { firstLine = false; continue; }  // skip CSV header row
+        if (len > 0 && lineBuf[len - 1] == '\r') lineBuf[--len] = '\0';
 
-      if (!matchesDeviceFilter(lineBuf)) continue;
-      if (!extractMinuteKey(lineBuf, curMinKey)) continue;
+        if (firstLine) { firstLine = false; continue; }  // skip CSV header row
+        if (len == 0) continue;
 
-      if (strcmp(curMinKey, prevMinKey) != 0) {
-        // minute boundary → emit the previous minute's last record
-        if (prevLine[0] != '\0') {
-          server.sendContent(prevLine);
-          server.sendContent("\r\n");
+        if (!matchesDeviceFilter(lineBuf)) continue;
+        if (!extractMinuteKey(lineBuf, curMinKey)) continue;
+
+        if (strcmp(curMinKey, prevMinKey) != 0) {
+          if (prevLine[0] != '\0') {
+            strncpy(sendBuf[sendCount], prevLine, 159);
+            sendBuf[sendCount][159] = '\0';
+            sendCount++;
+          }
+          strncpy(prevMinKey, curMinKey, sizeof(prevMinKey));
         }
-        strncpy(prevMinKey, curMinKey, sizeof(prevMinKey));
+
+        strncpy(prevLine, lineBuf, sizeof(prevLine) - 1);
+        prevLine[sizeof(prevLine) - 1] = '\0';
       }
 
-      // keep updating; last record in this minute wins
-      strncpy(prevLine, lineBuf, sizeof(prevLine) - 1);
-      prevLine[sizeof(prevLine) - 1] = '\0';
+      fileDone = !file.available();
+      filePos  = file.position();
+
+      // flush final record on last chunk
+      if (fileDone && prevLine[0] != '\0' && sendCount < SEND_BUF_LINES) {
+        strncpy(sendBuf[sendCount], prevLine, 159);
+        sendBuf[sendCount][159] = '\0';
+        sendCount++;
+        prevLine[0] = '\0';
+      }
+
+      file.close();
+      giveSDMutex();
+
+      // Send buffered lines without holding SD mutex
+      for (int i = 0; i < sendCount; i++) {
+        server.sendContent(sendBuf[i]);
+        server.sendContent("\r\n");
+      }
+
+      // yield so logger and csv_writer can get the mutex
+      vTaskDelay(pdMS_TO_TICKS(10));
     }
-
-    // flush the final pending record
-    if (prevLine[0] != '\0') {
-      server.sendContent(prevLine);
-      server.sendContent("\r\n");
-    }
-
-    file.close();
-    giveSDMutex();
-
-    // brief yield between files so CSV Writer can flush if queued
-    vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
 
@@ -825,7 +865,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid json body\"}");
+        "{\"error\":\"invalid json body\",\"reason\":\"body is not valid JSON\"}");
 
       logResponse(400, "invalid json");
 
@@ -867,7 +907,7 @@ void handleSetConfig() {
         server.send(
           400,
           "application/json",
-          "{\"error\":\"invalid node_id cfg\"}");
+          "{\"error\":\"invalid node_id cfg\",\"field\":\"node_id\",\"reason\":\"failed isValidNodeId check\"}");
 
         return;
       }
@@ -902,7 +942,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid prox_low cfg\"}");
+        "{\"error\":\"invalid prox_low cfg\",\"field\":\"prox_low\",\"reason\":\"must be 0 or 1\"}");
 
       return;
     }
@@ -922,7 +962,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid alarm cfg\"}");
+        "{\"error\":\"invalid alarm cfg\",\"field\":\"alarm_enabled\",\"reason\":\"must be 0 or 1\"}");
 
       return;
     }
@@ -947,7 +987,7 @@ void handleSetConfig() {
         server.send(
           400,
           "application/json",
-          "{\"error\":\"invalid animal_id cfg\"}");
+          "{\"error\":\"invalid animal_id cfg\",\"field\":\"animal_id\",\"reason\":\"failed isValidAnimalId check\"}");
 
         return;
       }
@@ -986,7 +1026,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid ap_password\"}");
+        "{\"error\":\"invalid ap_password\",\"field\":\"ap_password\",\"reason\":\"length must be 8-20 chars\"}");
 
       return;
     }
@@ -1022,7 +1062,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid record_interval_sec cfg\"}");
+        "{\"error\":\"invalid record_interval_sec cfg\",\"field\":\"record_interval_sec\",\"reason\":\"must be 10-3600\"}");
 
       return;
     }
@@ -1037,12 +1077,12 @@ void handleSetConfig() {
 
     int v = doc["retention_days"].as<int>();
 
-    if (v < 1 || v > 14) {
+    if (v < 1 || v > 21) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid retention_days cfg\"}");
+        "{\"error\":\"invalid retention_days cfg\",\"field\":\"retention_days\",\"reason\":\"must be 1-21\"}");
 
       return;
     }
@@ -1062,7 +1102,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid partition_hours cfg\"}");
+        "{\"error\":\"invalid partition_hours cfg\",\"field\":\"partition_hours\",\"reason\":\"must be 3-24 and a divisor of 24\"}");
 
       return;
     }
@@ -1082,7 +1122,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid estrus_threshold_pct cfg\"}");
+        "{\"error\":\"invalid estrus_threshold_pct cfg\",\"field\":\"estrus_threshold_pct\",\"reason\":\"must be 0.0-100.0\"}");
 
       return;
     }
@@ -1102,7 +1142,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid stop_after_alarm cfg\"}");
+        "{\"error\":\"invalid stop_after_alarm cfg\",\"field\":\"stop_after_alarm\",\"reason\":\"must be 0 or 1\"}");
 
       return;
     }
@@ -1122,7 +1162,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid min_baseline_windows cfg\"}");
+        "{\"error\":\"invalid min_baseline_windows cfg\",\"field\":\"min_baseline_windows\",\"reason\":\"must be 2-48\"}");
 
       return;
     }
@@ -1142,7 +1182,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid dirty_timeout_min cfg\"}");
+        "{\"error\":\"invalid dirty_timeout_min cfg\",\"field\":\"dirty_timeout_min\",\"reason\":\"must be 10-480\"}");
 
       return;
     }
@@ -1180,7 +1220,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid injection_date, use YYYY-MM-DD\"}");
+        "{\"error\":\"invalid injection_date\",\"field\":\"injection_date\",\"reason\":\"must be YYYY-MM-DD or empty string\"}");
 
       logResponse(400, "invalid injection_date");
 
@@ -1200,7 +1240,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid current_threshold cfg\"}");
+        "{\"error\":\"invalid current_threshold cfg\",\"field\":\"current_threshold\",\"reason\":\"must be 100.0-150.0\"}");
 
       return;
     }
@@ -1218,7 +1258,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid power_threshold cfg\"}");
+        "{\"error\":\"invalid power_threshold cfg\",\"field\":\"power_threshold\",\"reason\":\"must be 400.0-600.0\"}");
 
       return;
     }
@@ -1477,15 +1517,22 @@ void handleLatest() {
   // ========================
   // POWER
   // ========================
-  json += "\"voltage\":" + String(SYS.voltage) + ",";
-  json += "\"current\":" + String(SYS.current) + ",";
-  json += "\"power\":" + String(SYS.power) + ",";
+  auto safeFloat = [](float v) -> String {
+    if (isnan(v) || isinf(v)) return "null";
+    return String(v, 2);
+  };
+
+  json += "\"voltage\":"         + safeFloat(SYS.voltage)      + ",";
+  json += "\"current\":"         + safeFloat(SYS.current)      + ",";
+  json += "\"power\":"           + safeFloat(SYS.power)        + ",";
 
   // ========================
   // BATTERY
   // ========================
-  json += "\"battery_percent\":" + String(SYS.battery_pct) + ",";
-  json += "\"battery_days\":" + String(powerStats.estimated_days_left, 1) + ",";
+  json += "\"battery_percent\":" + safeFloat(SYS.battery_pct)  + ",";
+
+  float _bdays = powerStats.estimated_days_left;
+  json += "\"battery_days\":"    + (isnan(_bdays) || isinf(_bdays) ? String("null") : String(_bdays, 1)) + ",";
   json += "\"battery_date\":\"" + String(powerStats.estimated_date) + "\",";
 
   // ========================
@@ -1543,7 +1590,7 @@ void handleEstrus() {
     }
   }
 
-  bool isEstrusWindow = hasInjectionDate && (cycleDay >= 20 && cycleDay <= 21);
+  bool isEstrusWindow = hasInjectionDate && (cycleDay >= 18 && cycleDay <= 24);
 
   String json = "{";
 
@@ -1551,16 +1598,21 @@ void handleEstrus() {
   json += String(SYS.partition);
   json += ",";
 
+  auto safeFloat1 = [](float v) -> String {
+    if (isnan(v) || isinf(v)) return "null";
+    return String(v, 1);
+  };
+
   json += "\"current_rate\":";
-  json += String(SYS.current_rate * 100.0f, 1);
+  json += safeFloat1(SYS.current_rate * 100.0f);
   json += ",";
 
   json += "\"baseline_rate\":";
-  json += String(SYS.baseline_rate * 100.0f, 1);
+  json += safeFloat1(SYS.baseline_rate * 100.0f);
   json += ",";
 
   json += "\"deviation_pct\":";
-  json += String(SYS.deviation_pct, 1);
+  json += safeFloat1(SYS.deviation_pct);
   json += ",";
 
   json += "\"threshold_pct\":100.0,";
@@ -1585,7 +1637,7 @@ void handleEstrus() {
   json += String(cycleDay);
   json += ",";
 
-  // is_estrus_window = 1 jika berada di hari 20-21 dari siklus (window deteksi estrus sapi)
+  // is_estrus_window = 1 jika berada di hari 18-24 dari siklus (window deteksi estrus sapi)
   json += "\"is_estrus_window\":";
   json += String(isEstrusWindow ? 1 : 0);
 
@@ -1821,6 +1873,8 @@ void handleRTCSync() {
   epoch += (7UL * 3600UL);
 
   rtc.adjust(DateTime(epoch));
+
+  syncSystemClock();
 
   SYS.last_sync_millis = millis();
 

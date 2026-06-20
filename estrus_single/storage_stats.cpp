@@ -8,7 +8,7 @@
 
 #define CSV_BUFFER_SIZE  128
 #define MAX_PARTITIONS   24
-#define MAX_RETENTION    14   // max retention_days
+#define MAX_RETENTION    21   // max retention_days
 
 uint32_t csvRowsWritten = 0;
 

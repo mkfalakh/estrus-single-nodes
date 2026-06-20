@@ -18,3 +18,6 @@ void saveRTCEpoch(uint32_t epoch);
 uint32_t loadRTCEpoch();
 
 bool checkRTCHealth();
+
+// Sync ESP32 system clock (gettimeofday) from RTC so SD FAT timestamps are correct.
+void syncSystemClock();
