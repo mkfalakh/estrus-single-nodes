@@ -751,8 +751,8 @@ void handleGetConfig() {
   json += String(sysConfig.min_baseline_samples);
   json += ",";
 
-  json += "\"dirty_timeout_samples\":";
-  json += String(sysConfig.dirty_timeout_samples);
+  json += "\"dirty_timeout_hours\":";
+  json += String(sysConfig.dirty_timeout_hours);
   json += ",";
 
   // BATTERY
@@ -1106,21 +1106,21 @@ void handleSetConfig() {
   // ========================
   // DIRTY TIMEOUT SAMPLES
   // ========================
-  if (hasField("dirty_timeout_samples")) {
+  if (hasField("dirty_timeout_hours")) {
 
-    int v = doc["dirty_timeout_samples"].as<int>();
+    int v = doc["dirty_timeout_hours"].as<int>();
 
-    if (v < 10 || v > 1000) {
+    if (v < 1.0 || v > 24.0) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid dirty_timeout_samples cfg\"}");
+        "{\"error\":\"invalid dirty_timeout_hours cfg\"}");
 
       return;
     }
 
-    temp.dirty_timeout_samples = v;
+    temp.dirty_timeout_hours = v;
   }
 
   // ========================
@@ -1174,7 +1174,7 @@ void handleSetConfig() {
   bool retentionChanged = temp.retention_days != sysConfig.retention_days;
   bool stopAlarmChanged = temp.stop_after_alarm != sysConfig.stop_after_alarm;
   bool baselineSampleChanged = temp.min_baseline_samples != sysConfig.min_baseline_samples;
-  bool dirtySampleChanged = temp.dirty_timeout_samples != sysConfig.dirty_timeout_samples;
+  bool dirtySampleChanged = temp.dirty_timeout_hours != sysConfig.dirty_timeout_hours;
 
   bool currentChanged = temp.current_threshold != sysConfig.current_threshold;
   bool powerChanged = temp.power_threshold != sysConfig.power_threshold;
@@ -1268,8 +1268,8 @@ void handleSetConfig() {
     resetDirtyDetection();
 
     logToFile(
-      "🔁 dirty_timeout_samples updated: %d",
-      sysConfig.dirty_timeout_samples);
+      "🔁 dirty_timeout_hours updated: %d",
+      sysConfig.dirty_timeout_hours);
   }
 
   // current threshold berubah
@@ -1308,7 +1308,7 @@ void handleSetConfig() {
     savedJson += "\"estrus_threshold_pct\":" + String(sysConfig.estrus_threshold_pct, 2) + ",";
     savedJson += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? 1 : 0) + ",";
     savedJson += "\"min_baseline_samples\":" + String(sysConfig.min_baseline_samples) + ",";
-    savedJson += "\"dirty_timeout_samples\":" + String(sysConfig.dirty_timeout_samples) + ",";
+    savedJson += "\"dirty_timeout_hours\":" + String(sysConfig.dirty_timeout_hours) + ",";
     savedJson += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
     savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold);
 
@@ -1374,8 +1374,8 @@ void handleLatest() {
 
   String json = "{";
 
-  json += "\"node_id\":\"" + String(sysConfig.node_id) + "\",";
-  json += "\"animal_id\":\"" + String(sysConfig.animal_id) + "\",";
+  // json += "\"node_id\":\"" + String(sysConfig.node_id) + "\",";
+  // json += "\"animal_id\":\"" + String(sysConfig.animal_id) + "\",";
 
   if (SYS.rtc_ok) {
 
@@ -1415,11 +1415,10 @@ void handleLatest() {
   // ========================
   json += "\"sd\":" + String(SYS.sd_ok ? 1 : 0) + ",";
   json += "\"rtc\":" + String(SYS.rtc_ok ? 1 : 0) + ",";
-  json += "\"sensor\":" + String(SYS.sensor_ok ? 1 : 0) + ",";
-  json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
-  json += "\"buzzer\":" + String(SYS.alarm_active ? 1 : 0) + ",";
-  json += "\"sensor_dirty\":" + String(sysIsSensorDirty() ? 1 : 0) + ",";
+  json += "\"ina\":" + String(SYS.ina_ok ? 1 : 0) + ",";
   json += "\"alarm\":" + String(sysIsAlarm() ? 1 : 0) + ",";
+  json += "\"wifi\":" + String(wifiEnabled ? 1 : 0) + ",";
+  // json += "\"buzzer\":" + String(SYS.alarm_active ? 1 : 0) + ",";
   json += "\"low_battery\":" + String(sysIsLowBattery() ? 1 : 0);
 
   json += "}";
@@ -1548,58 +1547,58 @@ void handleStorage() {
     json);
 }
 
-void handleHealth() {
+// void handleHealth() {
 
-  // if (!isAuthenticated()) {
+//   // if (!isAuthenticated()) {
 
-  //   server.send(
-  //     401,
-  //     "application/json",
-  //     "{\"error\":\"unauthorized\"}");
+//   //   server.send(
+//   //     401,
+//   //     "application/json",
+//   //     "{\"error\":\"unauthorized\"}");
 
-  //   return;
-  // }
+//   //   return;
+//   // }
 
-  String json = "{";
+//   String json = "{";
 
-  json += "\"sd\":";
-  json += String(SYS.sd_ok ? "true" : "false");
-  json += ",";
+//   json += "\"sd\":";
+//   json += String(SYS.sd_ok ? "true" : "false");
+//   json += ",";
 
-  json += "\"rtc\":";
-  json += String(SYS.rtc_ok ? "true" : "false");
-  json += ",";
+//   json += "\"rtc\":";
+//   json += String(SYS.rtc_ok ? "true" : "false");
+//   json += ",";
 
-  json += "\"sensor\":";
-  json += String(SYS.sensor_ok ? "true" : "false");
-  json += ",";
+//   json += "\"sensor\":";
+//   json += String(SYS.sensor_ok ? "true" : "false");
+//   json += ",";
 
-  json += "\"sensor_dirty\":";
-  json += String(sysIsSensorDirty() ? "true" : "false");
-  json += ",";
+//   json += "\"sensor_dirty\":";
+//   json += String(sysIsSensorDirty() ? "true" : "false");
+//   json += ",";
 
-  json += "\"wifi\":";
-  json += String(wifiEnabled ? "true" : "false");
-  json += ",";
+//   json += "\"wifi\":";
+//   json += String(wifiEnabled ? "true" : "false");
+//   json += ",";
 
-  json += "\"alarm\":";
-  json += String(sysIsAlarm() ? "true" : "false");
-  json += ",";
+//   json += "\"alarm\":";
+//   json += String(sysIsAlarm() ? "true" : "false");
+//   json += ",";
 
-  json += "\"low_battery\":";
-  json += String(sysIsLowBattery() ? "true" : "false");
-  json += ",";
+//   json += "\"low_battery\":";
+//   json += String(sysIsLowBattery() ? "true" : "false");
+//   json += ",";
 
-  json += "\"error\":";
-  json += String(sysIsSystemFault() ? "true" : "false");
+//   json += "\"error\":";
+//   json += String(sysIsSystemFault() ? "true" : "false");
 
-  json += "}";
+//   json += "}";
 
-  server.send(
-    200,
-    "application/json",
-    json);
-}
+//   server.send(
+//     200,
+//     "application/json",
+//     json);
+// }
 
 void handleDevice() {
 
@@ -1817,7 +1816,7 @@ void initWebServer() {
   ROUTE("/api/node/latest", HTTP_GET, handleLatest);    // snapshot hardware & health
   ROUTE("/api/node/estrus", HTTP_GET, handleEstrus);    // informasi model estrus
   ROUTE("/api/node/history", HTTP_GET, handleHistory);  // untuk melihat data csv
-  ROUTE("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
+  // ROUTE("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
   ROUTE("/api/node/device", HTTP_GET, handleDevice);    // identitas device (node_id, mac, firmware)
   ROUTE("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
 
