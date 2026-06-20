@@ -1600,11 +1600,11 @@ void handleEstrus() {
   };
 
   json += "\"current_rate\":";
-  json += safeFloat1(SYS.current_rate * 100.0f);
+  json += safeFloat1(SYS.current_rate);
   json += ",";
 
   json += "\"baseline_rate\":";
-  json += safeFloat1(SYS.baseline_rate * 100.0f);
+  json += safeFloat1(SYS.baseline_rate);
   json += ",";
 
   json += "\"deviation_pct\":";
