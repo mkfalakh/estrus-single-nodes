@@ -187,7 +187,7 @@ void loadConfig() {
       sysConfig.estrus_threshold_pct = prefs.getFloat("estrus", 6.0f);
       sysConfig.stop_after_alarm = prefs.getBool("stop_alarm", true);
       sysConfig.min_baseline_samples = prefs.getUShort("base_sample", 10);
-      sysConfig.dirty_timeout_samples = prefs.getUShort("dirty_sample", 240);
+      sysConfig.dirty_timeout_hours = prefs.getUChar("dirty_hour", 2);
 
       // Battery
       sysConfig.current_threshold = prefs.getFloat("curr_th", 150.0);
@@ -228,7 +228,7 @@ void loadConfig() {
     sysConfig.estrus_threshold_pct = 6.0f;  // 0.1 - 100 %
     sysConfig.stop_after_alarm = true;
     sysConfig.min_baseline_samples = 10;   // 10 - 1000 | untuk validasi baseline
-    sysConfig.dirty_timeout_samples = 240;  // 10 - 1000 | sample untuk mengetahui sensor kotor atau tidak
+    sysConfig.dirty_timeout_hours = 2;  // 1 - 24 | batas waktu untuk mengetahui sensor kotor atau tidak
 
     // Battery
     sysConfig.current_threshold = 150.0;  // 100 - 150 mA | alert batas maksimal arus batre
@@ -240,23 +240,23 @@ void loadConfig() {
     // Debug
     Serial.println("⚙️ Default Config Loaded!");
 
-    Serial.println(String("node id: ") + sysConfig.node_id);
-    Serial.println(String("animal id: ") + sysConfig.animal_id);
-    Serial.println(String("AP password: ") + sysConfig.ap_password);
-    Serial.println(String("prox mode: ") + sysConfig.prox_active_low);
-    Serial.println(String("alarm enable ? ") + sysConfig.alarm_enabled);
+    // Serial.println(String("node id: ") + sysConfig.node_id);
+    // Serial.println(String("animal id: ") + sysConfig.animal_id);
+    // Serial.println(String("AP password: ") + sysConfig.ap_password);
+    // Serial.println(String("prox mode: ") + sysConfig.prox_active_low);
+    // Serial.println(String("alarm enable ? ") + sysConfig.alarm_enabled);
 
-    Serial.println(String("rec interval sec: ") + sysConfig.record_interval_sec);
-    Serial.println(String("retention days: ") + sysConfig.retention_days);
-    Serial.println(String("partition hours: ") + sysConfig.partition_hours);
-    Serial.println(String("estrus threshold: ") + sysConfig.estrus_threshold_pct);
-    Serial.println(String("stop after alarm ? ") + sysConfig.stop_after_alarm);
-    Serial.println(String("baseline samples: ") + sysConfig.min_baseline_samples);
-    Serial.println(String("dirty samples: ") + sysConfig.dirty_timeout_samples);
+    // Serial.println(String("rec interval sec: ") + sysConfig.record_interval_sec);
+    // Serial.println(String("retention days: ") + sysConfig.retention_days);
+    // Serial.println(String("partition hours: ") + sysConfig.partition_hours);
+    // Serial.println(String("estrus threshold: ") + sysConfig.estrus_threshold_pct);
+    // Serial.println(String("stop after alarm ? ") + sysConfig.stop_after_alarm);
+    // Serial.println(String("baseline samples: ") + sysConfig.min_baseline_samples);
+    // Serial.println(String("dirty samples: ") + sysConfig.dirty_timeout_hours);
 
-    Serial.println(String("current threshold: ") + sysConfig.current_threshold);
-    Serial.println(String("power threshold: ") + sysConfig.power_threshold);
-    Serial.println(String("energy: ") + powerStats.energy_mWh);
+    // Serial.println(String("current threshold: ") + sysConfig.current_threshold);
+    // Serial.println(String("power threshold: ") + sysConfig.power_threshold);
+    // Serial.println(String("energy: ") + powerStats.energy_mWh);
   }
 }
 
@@ -283,7 +283,7 @@ void saveConfig() {
   prefs.putFloat("estrus", sysConfig.estrus_threshold_pct);
   prefs.putBool("stop_alarm", sysConfig.stop_after_alarm);
   prefs.putUShort("base_sample", sysConfig.min_baseline_samples);
-  prefs.putUShort("dirty_sample", sysConfig.dirty_timeout_samples);
+  prefs.putUChar("dirty_hour", sysConfig.dirty_timeout_hours);
 
   // Battery
   prefs.putFloat("curr_th", sysConfig.current_threshold);
