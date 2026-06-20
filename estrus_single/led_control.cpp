@@ -4,6 +4,16 @@
 #include "config_runtime.h"
 #include "system_state.h"
 #include "logger.h"
+#include <Adafruit_NeoPixel.h>
+
+#define RGB_BUILTIN_PIN 48  // pin default LED RGB ESP32-S3 
+#define LED_FREQ 5000
+#define LED_RES 8
+
+Adafruit_NeoPixel builtinRGB(
+  1,
+  RGB_BUILTIN_PIN,
+  NEO_GRB + NEO_KHZ800);
 
 volatile LedPattern ledPattern = LED_IDLE;
 
@@ -15,11 +25,22 @@ static unsigned long wifiWakeTs = 0;
 
 // helper
 void setLED(uint8_t r, uint8_t g, uint8_t b) {
-  // use analog PWM (pin adc)
-  // common anode LED RGB
+  // use PWM hardware (pin adc)
+  ledcAttach(LED_R, LED_FREQ, LED_RES);
+  ledcAttach(LED_G, LED_FREQ, LED_RES);
+  ledcAttach(LED_B, LED_FREQ, LED_RES);
+
+  delayMicroseconds(200);
+
+  // common anode LED RGB 4 kaki | LED RGB eksternal
   analogWrite(LED_R, 255 - r);
-  analogWrite(LED_G, 225 - g);
-  analogWrite(LED_B, 225 - b);
+  analogWrite(LED_G, 255 - g);
+  analogWrite(LED_B, 255 - b);
+
+  // LED RGB bawaan ESP32-S3
+  builtinRGB.setPixelColor(0, builtinRGB.Color(r, g, b));
+
+  builtinRGB.show();
 }
 
 inline void ledOff() {
@@ -27,53 +48,60 @@ inline void ledOff() {
 }
 
 inline void ledGreen() {
-  setLED(0, 180, 0);
+  setLED(0, 255, 0);
 }
 
 inline void ledRed() {
-  setLED(180, 0, 0);
+  setLED(255, 0, 0);
 }
 
 inline void ledBlue() {
-  setLED(0, 0, 180);
+  setLED(0, 0, 255);
 }
 
 inline void ledYellow() {
-  setLED(180, 180, 0);
+  setLED(255, 255, 0);
 }
 
 inline void ledOrange() {
-  setLED(255, 60, 0);
+  setLED(255, 100, 0);
 }
 
 // tes led
-// void testLEDColors() {
+void testLEDColors() {
 
-//   ledRed();
-//   delay(2000);
+  ledRed();
+  delay(1000);
 
-//   ledGreen();
-//   delay(2000);
+  ledGreen();
+  delay(1000);
 
-//   ledBlue();
-//   delay(2000);
+  ledBlue();
+  delay(1000);
 
-//   ledYellow();
-//   delay(2000);
+  ledYellow();
+  delay(1000);
 
-//   ledOrange();
-//   delay(2000);
+  ledOrange();
+  delay(1000);
 
-//   ledOff();
-// }
+  // ledOff();
+}
 
 // init led
 void initLED() {
+  // LED RGB external
   pinMode(LED_R, OUTPUT);
   pinMode(LED_G, OUTPUT);
   pinMode(LED_B, OUTPUT);
 
-  // testLEDColors();
+  // LED RGB bawaan esp32s3
+  builtinRGB.begin();
+  builtinRGB.setBrightness(50);
+  builtinRGB.clear();
+  builtinRGB.show();
+
+  testLEDColors();
   ledOff();
 
   Serial.println("✅ LED Ready");
@@ -82,7 +110,7 @@ void initLED() {
 // led pattern
 void updateLedPattern() {
 
-  if (sysIsSensorDirty()) {
+  if (sysIsSensor1Dirty() || sysIsSensor2Dirty()) {
 
     ledPattern = LED_SENSOR_DIRTY;
 
@@ -157,7 +185,7 @@ void ledTask(void *pv) {
 
     unsigned long now = millis();
 
-    if (sysIsSensorDirty()) {
+    if (sysIsSensor1Dirty() || sysIsSensor2Dirty()) {
 
       ledPattern = LED_SENSOR_DIRTY;
 
