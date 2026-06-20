@@ -4,15 +4,6 @@
 #include "estrus_model.h"
 
 // ========================
-// ENUM STATUS
-// ========================
-// enum SystemHealth {
-//   SYS_OK,
-//   SYS_WARN,
-//   SYS_ERROR
-// };
-
-// ========================
 // STRUCT STATE
 // ========================
 typedef struct {
@@ -21,8 +12,6 @@ typedef struct {
   bool sd_ok;
   bool rtc_ok;
   bool ina_ok;
-  bool sensor_ok;
-  bool sensor_dirty;
 
   // --- power ---
   float battery_pct;
@@ -87,9 +76,10 @@ bool sysIsAlarm();
 bool sysIsEstrus();
 
 // SENSOR
-void sysSetSensorHealth(bool ok);
-void sysSetSensorDirty(bool dirty);
-bool sysIsSensorDirty();
+void sysSetSensor1Dirty(bool d1);
+void sysSetSensor2Dirty(bool d2);
+bool sysIsSensor1Dirty();
+bool sysIsSensor2Dirty();
 
 // MODEL
 float sysGetDeviationPct();
