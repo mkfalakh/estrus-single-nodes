@@ -25,7 +25,7 @@ typedef struct {
   bool stop_after_alarm;
 
   uint16_t min_baseline_samples;
-  uint16_t dirty_timeout_samples;
+  uint8_t dirty_timeout_hours;
 
 } SystemConfig;
 
