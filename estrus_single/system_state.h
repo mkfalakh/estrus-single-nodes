@@ -37,12 +37,12 @@ typedef struct {
   bool sensor2_dirty;
 
   // --- model estrus ---
-  float current_rate;
-  float baseline_rate;
-  float deviation_pct;
-  bool estrus;
-  uint8_t partition;
-  uint32_t baseline_samples;
+  float    current_rate;
+  float    baseline_rate;
+  float    deviation_pct;
+  bool     estrus;
+  uint8_t  partition;
+  uint16_t baseline_windows;
 
   // --- control alarm ---
   bool alarm_active;

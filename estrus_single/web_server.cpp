@@ -766,12 +766,12 @@ void handleGetConfig() {
   json += String(sysConfig.stop_after_alarm ? 1 : 0);
   json += ",";
 
-  json += "\"min_baseline_samples\":";
-  json += String(sysConfig.min_baseline_samples);
+  json += "\"min_baseline_windows\":";
+  json += String(sysConfig.min_baseline_windows);
   json += ",";
 
-  json += "\"dirty_timeout_samples\":";
-  json += String(sysConfig.dirty_timeout_samples);
+  json += "\"dirty_timeout_min\":";
+  json += String(sysConfig.dirty_timeout_min);
   json += ",";
 
   // BATTERY
@@ -1057,7 +1057,7 @@ void handleSetConfig() {
 
     int v = doc["partition_hours"].as<int>();
 
-    if (v < 1 || v > 24 || (24 % v) != 0) {
+    if (v < 3 || v > 24 || (24 % v) != 0) {
 
       server.send(
         400,
@@ -1111,43 +1111,43 @@ void handleSetConfig() {
   }
 
   // ========================
-  // MIN BASELINE SAMPLES
+  // MIN BASELINE WINDOWS
   // ========================
-  if (hasField("min_baseline_samples")) {
+  if (hasField("min_baseline_windows")) {
 
-    int v = doc["min_baseline_samples"].as<int>();
+    int v = doc["min_baseline_windows"].as<int>();
 
-    if (v < 10 || v > 1000) {
+    if (v < 2 || v > 48) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid min_baseline_samples cfg\"}");
+        "{\"error\":\"invalid min_baseline_windows cfg\"}");
 
       return;
     }
 
-    temp.min_baseline_samples = v;
+    temp.min_baseline_windows = (uint8_t)v;
   }
 
   // ========================
-  // DIRTY TIMEOUT SAMPLES
+  // DIRTY TIMEOUT MIN
   // ========================
-  if (hasField("dirty_timeout_samples")) {
+  if (hasField("dirty_timeout_min")) {
 
-    int v = doc["dirty_timeout_samples"].as<int>();
+    int v = doc["dirty_timeout_min"].as<int>();
 
-    if (v < 10 || v > 1000) {
+    if (v < 10 || v > 480) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid dirty_timeout_samples cfg\"}");
+        "{\"error\":\"invalid dirty_timeout_min cfg\"}");
 
       return;
     }
 
-    temp.dirty_timeout_samples = v;
+    temp.dirty_timeout_min = (uint16_t)v;
   }
 
   // ========================
@@ -1238,8 +1238,8 @@ void handleSetConfig() {
   bool estrusThresholdChanged = temp.estrus_threshold_pct != sysConfig.estrus_threshold_pct;
   bool retentionChanged = temp.retention_days != sysConfig.retention_days;
   bool stopAlarmChanged = temp.stop_after_alarm != sysConfig.stop_after_alarm;
-  bool baselineSampleChanged = temp.min_baseline_samples != sysConfig.min_baseline_samples;
-  bool dirtySampleChanged = temp.dirty_timeout_samples != sysConfig.dirty_timeout_samples;
+  bool baselineWindowChanged = temp.min_baseline_windows != sysConfig.min_baseline_windows;
+  bool dirtyMinChanged       = temp.dirty_timeout_min   != sysConfig.dirty_timeout_min;
 
   bool currentChanged = temp.current_threshold != sysConfig.current_threshold;
   bool powerChanged = temp.power_threshold != sysConfig.power_threshold;
@@ -1318,24 +1318,24 @@ void handleSetConfig() {
       sysConfig.stop_after_alarm);
   }
 
-  // min baseline samples berubah
-  if (baselineSampleChanged) {
+  // min baseline windows berubah
+  if (baselineWindowChanged) {
 
     triggerBaselineRecompute();
 
     logToFile(
-      "🔁 min_baseline_samples updated: %d",
-      sysConfig.min_baseline_samples);
+      "🔁 min_baseline_windows updated: %d",
+      sysConfig.min_baseline_windows);
   }
 
-  // dirty timeout samples berubah
-  if (dirtySampleChanged) {
+  // dirty timeout min berubah
+  if (dirtyMinChanged) {
 
     resetDirtyDetection();
 
     logToFile(
-      "🔁 dirty_timeout_samples updated: %d",
-      sysConfig.dirty_timeout_samples);
+      "🔁 dirty_timeout_min updated: %d min",
+      sysConfig.dirty_timeout_min);
   }
 
   // current threshold berubah
@@ -1358,7 +1358,7 @@ void handleSetConfig() {
   if (injectionDateChanged) {
 
     logToFile(
-      "📅 Injection date updated: %s (estrus expected ~day 20-21)",
+      "📅 Injection date updated: %s",
       sysConfig.injection_date[0] ? sysConfig.injection_date : "(cleared)");
   }
 
@@ -1381,8 +1381,8 @@ void handleSetConfig() {
     savedJson += "\"partition_hours\":" + String(sysConfig.partition_hours) + ",";
     savedJson += "\"estrus_threshold_pct\":" + String(sysConfig.estrus_threshold_pct, 2) + ",";
     savedJson += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? 1 : 0) + ",";
-    savedJson += "\"min_baseline_samples\":" + String(sysConfig.min_baseline_samples) + ",";
-    savedJson += "\"dirty_timeout_samples\":" + String(sysConfig.dirty_timeout_samples) + ",";
+    savedJson += "\"min_baseline_windows\":" + String(sysConfig.min_baseline_windows) + ",";
+    savedJson += "\"dirty_timeout_min\":" + String(sysConfig.dirty_timeout_min) + ",";
     savedJson += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
     savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold) + ",";
     savedJson += "\"injection_date\":\"" + String(sysConfig.injection_date) + "\"";
@@ -1543,8 +1543,7 @@ void handleEstrus() {
     }
   }
 
-  // cow estrus typically shows at day 20-21; detection window day 18-22
-  bool isEstrusWindow = hasInjectionDate && (cycleDay >= 18 && cycleDay <= 22);
+  bool isEstrusWindow = hasInjectionDate && (cycleDay >= 20 && cycleDay <= 21);
 
   String json = "{";
 
@@ -1564,20 +1563,18 @@ void handleEstrus() {
   json += String(SYS.deviation_pct, 1);
   json += ",";
 
-  json += "\"threshold_pct\":";
-  json += String(sysConfig.estrus_threshold_pct, 1);
-  json += ",";
+  json += "\"threshold_pct\":100.0,";
 
-  json += "\"baseline_samples\":";
-  json += String(SYS.baseline_samples);
+  json += "\"baseline_windows\":";
+  json += String(SYS.baseline_windows);
   json += ",";
 
   json += "\"estrus\":";
   json += String(SYS.estrus ? 1 : 0);
   json += ",";
 
-  json += "\"valid\":";  // agar tahu baseline sudah cukup atau belum
-  json += String(SYS.baseline_samples >= sysConfig.min_baseline_samples);
+  json += "\"valid\":";
+  json += (SYS.baseline_windows >= sysConfig.min_baseline_windows) ? "true" : "false";
   json += ",";
 
   json += "\"injection_date\":\"";
@@ -1588,7 +1585,7 @@ void handleEstrus() {
   json += String(cycleDay);
   json += ",";
 
-  // is_estrus_window = 1 jika berada di hari 18-22 dari siklus (window deteksi estrus sapi)
+  // is_estrus_window = 1 jika berada di hari 20-21 dari siklus (window deteksi estrus sapi)
   json += "\"is_estrus_window\":";
   json += String(isEstrusWindow ? 1 : 0);
 

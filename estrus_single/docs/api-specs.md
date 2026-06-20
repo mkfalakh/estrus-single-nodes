@@ -57,8 +57,8 @@ ESP32 Web Server — RESTful JSON API + static file serving.
   "partition_hours": 6,
   "estrus_threshold_pct": 75.00,
   "stop_after_alarm": 0,
-  "min_baseline_samples": 20,
-  "dirty_timeout_samples": 30,
+  "min_baseline_windows": 4,
+  "dirty_timeout_min": 240,
   "current_threshold": 100.00,
   "power_threshold": 400.00,
   "injection_date": "2026-06-01"
@@ -77,11 +77,11 @@ ESP32 Web Server — RESTful JSON API + static file serving.
   | alarm_enabled            | int      | 0 or 1                 | Enable/disable buzzer                   | No            |
   | record_interval_sec      | int      | 10–3600                | CSV write interval                      | No            |
   | retention_days           | int      | 1–14                   | File cleanup age                        | No*           |
-  | partition_hours          | int      | Divisor of 24 (1,2,3,4,6,8,12,24) | Time bucket for analytics       | No            |
-  | estrus_threshold_pct     | float    | 0–100                  | Estrus trigger %                       | No            |
+  | partition_hours          | int      | Divisor of 24, min 3 (3,4,6,8,12,24) | Time bucket for reporting/baseline windows. Detection uses a fixed internal sliding window (1.5 h, step 30 min) regardless of this value. | No |
+  | estrus_threshold_pct     | float    | 0–100                  | Estrus trigger % — **reinterpreted internally as `z_threshold`**: `z_threshold = estrus_threshold_pct / 100 * 4.0` (max z=4). Default 75 → z=3.0 (SPEC §10 default); lower % = more sensitive. See SPEC §4 Layer 2. | No |
   | stop_after_alarm         | int      | 0 or 1                 | Auto-stop vs acknowledge               | No            |
-  | min_baseline_samples     | int      | 10–1000                | Min samples before baseline valid      | No            |
-  | dirty_timeout_samples    | int      | 10–1000                | Dirty sensor detection window           | No            |
+  | min_baseline_windows     | int      | 2–48                   | Min healthy windows required before z-score baseline is valid | No |
+  | dirty_timeout_min        | int      | 10–480                 | Minutes a sensor must be stuck at same value before marked dirty/untrusted | No |
   | current_threshold        | float    | 100–150                | Current anomaly %                      | No            |
   | power_threshold          | float    | 400–600                | Power anomaly %                        | No            |
   | injection_date           | string   | `"YYYY-MM-DD"` or `""`| Hormone injection date; empty to clear | No            |
@@ -156,9 +156,13 @@ ESP32 Web Server — RESTful JSON API + static file serving.
 }
 ```
 - **Field notes**:
+  - `current_rate` — `on_frac` of `sensor2_state` for the current detection window (0–1 scale × 100).
+  - `baseline_rate` — median `on_frac` across prior healthy windows (× 100).
+  - `deviation_pct` — `(z / z_threshold) * 100`; 100 = threshold reached, >100 = exceeded. Internally computed via robust z-score (median+MAD, see SPEC §4 Layer 2).
+  - `threshold_pct` — always `100.0`; threshold is crossed when `deviation_pct ≥ 100`.
   - `injection_date` — mirrors `sysConfig.injection_date`; `""` if not set.
   - `cycle_day` — days elapsed since injection + 1 (day 1 = injection day). `0` if no injection date or RTC not available.
-  - `is_estrus_window` — `1` if `cycle_day` is in the detection window (days 18–22); `0` otherwise. Always `0` when no injection date is set.
+  - `is_estrus_window` — `1` if `cycle_day` is in the detection window (days 20–21); `0` otherwise. Always `0` when no injection date is set.
 
 #### GET `/api/node/history` — CSV data page
 - **Query params**:

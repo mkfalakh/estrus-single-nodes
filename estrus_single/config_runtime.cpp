@@ -183,11 +183,11 @@ void loadConfig() {
       // Model Estrus
       sysConfig.record_interval_sec = prefs.getUShort("record", 10);
       sysConfig.retention_days = prefs.getUChar("retain", 7);
-      sysConfig.partition_hours = prefs.getUChar("part", 1);
-      sysConfig.estrus_threshold_pct = prefs.getFloat("estrus", 6.0f);
+      sysConfig.partition_hours = prefs.getUChar("part", 3);
+      sysConfig.estrus_threshold_pct = prefs.getFloat("estrus", 75.0f);
       sysConfig.stop_after_alarm = prefs.getBool("stop_alarm", true);
-      sysConfig.min_baseline_samples = prefs.getUShort("base_sample", 10);
-      sysConfig.dirty_timeout_samples = prefs.getUShort("dirty_sample", 240);
+      sysConfig.min_baseline_windows = (uint8_t)prefs.getUChar("base_win", 4);
+      sysConfig.dirty_timeout_min = prefs.getUShort("dirty_min", 240);
 
       // Battery
       sysConfig.current_threshold = prefs.getFloat("curr_th", 150.0);
@@ -227,13 +227,13 @@ void loadConfig() {
     sysConfig.alarm_enabled = true;    // ingin alarm aktif/mati
 
     // Model Estrus
-    sysConfig.record_interval_sec = 10;     // 10 - 3600
-    sysConfig.retention_days = 7;           // 1 - 14
-    sysConfig.partition_hours = 1;          // 1 - 24
-    sysConfig.estrus_threshold_pct = 6.0f;  // 0.1 - 100 %
+    sysConfig.record_interval_sec = 10;      // 10 - 3600
+    sysConfig.retention_days = 7;            // 1 - 14
+    sysConfig.partition_hours = 3;           // 3,4,6,8,12,24 (divisor of 24, min 3)
+    sysConfig.estrus_threshold_pct = 75.0f;  // 0-100 → z_threshold = val/100*4.0 → default z=3.0
     sysConfig.stop_after_alarm = true;
-    sysConfig.min_baseline_samples = 10;   // 10 - 1000 | untuk validasi baseline
-    sysConfig.dirty_timeout_samples = 240;  // 10 - 1000 | sample untuk mengetahui sensor kotor atau tidak
+    sysConfig.min_baseline_windows = 4;      // 2-48 | healthy windows required for valid z-score
+    sysConfig.dirty_timeout_min = 240;       // 10-480 min | stuck sensor timeout → 4 h default
 
     // Battery
     sysConfig.current_threshold = 150.0;  // 100 - 150 mA | alert batas maksimal arus batre
@@ -259,8 +259,8 @@ void loadConfig() {
     Serial.println(String("partition hours: ") + sysConfig.partition_hours);
     Serial.println(String("estrus threshold: ") + sysConfig.estrus_threshold_pct);
     Serial.println(String("stop after alarm ? ") + sysConfig.stop_after_alarm);
-    Serial.println(String("baseline samples: ") + sysConfig.min_baseline_samples);
-    Serial.println(String("dirty samples: ") + sysConfig.dirty_timeout_samples);
+    Serial.println(String("baseline windows: ") + sysConfig.min_baseline_windows);
+    Serial.println(String("dirty timeout min: ") + sysConfig.dirty_timeout_min);
 
     Serial.println(String("current threshold: ") + sysConfig.current_threshold);
     Serial.println(String("power threshold: ") + sysConfig.power_threshold);
@@ -290,8 +290,8 @@ void saveConfig() {
   prefs.putUChar("part", sysConfig.partition_hours);
   prefs.putFloat("estrus", sysConfig.estrus_threshold_pct);
   prefs.putBool("stop_alarm", sysConfig.stop_after_alarm);
-  prefs.putUShort("base_sample", sysConfig.min_baseline_samples);
-  prefs.putUShort("dirty_sample", sysConfig.dirty_timeout_samples);
+  prefs.putUChar("base_win", sysConfig.min_baseline_windows);
+  prefs.putUShort("dirty_min", sysConfig.dirty_timeout_min);
 
   // Battery
   prefs.putFloat("curr_th", sysConfig.current_threshold);

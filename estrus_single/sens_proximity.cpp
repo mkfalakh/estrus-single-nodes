@@ -54,8 +54,12 @@ void updateDirtyDetection(bool s1, bool s2) {
     lastSensor1 = s1;
   }
 
-  if (sensor1StableCount >= sysConfig.dirty_timeout_samples) {
+  uint16_t dirtySamples = (sysConfig.record_interval_sec > 0)
+    ? (uint16_t)(((uint32_t)sysConfig.dirty_timeout_min * 60UL) / sysConfig.record_interval_sec)
+    : UINT16_MAX;
+  if (dirtySamples < 1) dirtySamples = 1;
 
+  if (sensor1StableCount >= dirtySamples) {
     sensor1Dirty = true;
   }
 
@@ -75,8 +79,7 @@ void updateDirtyDetection(bool s1, bool s2) {
     lastSensor2 = s2;
   }
 
-  if (sensor2StableCount >= sysConfig.dirty_timeout_samples) {
-
+  if (sensor2StableCount >= dirtySamples) {
     sensor2Dirty = true;
   }
 }
@@ -188,9 +191,6 @@ void sensorTask(void *pv) {
       // set sensor dirty
       sysSetSensorDirty(d1 || d2);
 
-      // standing definition
-      bool standing = (s1 || s2);
-
       // ==========================
       // POWER
       // ==========================
@@ -246,16 +246,8 @@ void sensorTask(void *pv) {
       // ==========================
 
       if (rtcValid) {
-
-        // Partition Event
         checkTimeTransitions();
-
-        // Standing Stats
-        updateGlobalStats(standing);
-
-        // updatePartitionStats(standing);
-
-        // Evaluate Estrus
+        updateSensor2(s2, d1, d2);
         result = evaluateEstrus();
       }
 

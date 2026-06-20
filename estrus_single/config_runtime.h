@@ -14,10 +14,8 @@ typedef struct {
   char animal_id[ANIMAL_ID_MAX]; // offset 16 (aligned)
   char ap_password[32];          // offset 32 (aligned), ends at 64
 
-  // Hormone injection date (YYYY-MM-DD). Injections synchronize or shorten
-  // the natural 21-day reproductive cycle. Estrus typically shows ~day 20-21
-  // from injection. Leave empty if not set. Used by /api/node/estrus to report
-  // cycle_day and is_estrus_window (detection window: days 18-22).
+  // Hormone injection date (YYYY-MM-DD). Leave empty if not set.
+  // /api/node/estrus reports cycle_day and is_estrus_window (days 20-21).
   char injection_date[12];       // offset 64 (aligned), ends at 76
 
   bool prox_active_low;  // LOW / HIGH
@@ -34,8 +32,8 @@ typedef struct {
   float estrus_threshold_pct;
   bool stop_after_alarm;
 
-  uint16_t min_baseline_samples;
-  uint16_t dirty_timeout_samples;
+  uint8_t  min_baseline_windows;   // healthy windows required before z-score is valid (2-48)
+  uint16_t dirty_timeout_min;      // minutes sensor must be stuck before marked untrusted (10-480)
 
 } SystemConfig;
 
