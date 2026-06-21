@@ -26,6 +26,33 @@
           </div>
         </div>
 
+        <div class="header-center">
+          <!-- master alarm button (center for mobile/tablet) -->
+          <div style="position: relative">
+            <div id="ring" class="pulse-ring"></div>
+            <button
+              id="alarmButton"
+              class="alarm-btn alarm-inactive"
+              onclick="stopAlarm()"
+              title="Master Alarm"
+            >
+              <svg
+                id="icon-alarm"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- dark mode toggle -->
         <div
           class="header-right"
           style="
@@ -36,12 +63,34 @@
             align-items: flex-end;
           "
         >
-          <div style="display: flex; gap: 12px">
-            <!-- dark mode toggle -->
+          <div style="display: flex; gap: 12px; align-items: center">
+            <div class="alarm-desktop-wrapper" style="position: relative">
+              <div id="ringDesktop" class="pulse-ring"></div>
+              <button
+                id="alarmButtonDesktop"
+                class="alarm-btn alarm-inactive"
+                onclick="stopAlarm()"
+                title="Master Alarm (Desktop)"
+              >
+                <svg
+                  id="icon-alarm-desktop"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+              </button>
+            </div>
             <button class="btn-theme" id="themeToggle" onclick="toggleTheme()">
               <span id="themeIcon">🌙</span>
               <span id="themeText">Dark</span>
             </button>
+
             <!-- logout button -->
             <!-- <button class="btn-logout" onclick="logoutSession()">
               <svg
@@ -69,7 +118,7 @@
               <span class="dot dot-inactive" id="rtcStatus"></span> RTC
             </div>
             <div class="status-item">
-              <span class="dot dot-inactive" id="sensorStatus"></span> SENSOR
+              <span class="dot dot-inactive" id="inaStatus"></span> INA
             </div>
             <div class="status-item">
               <span class="dot dot-inactive" id="alarmStatus"></span> ALARM
@@ -101,7 +150,7 @@
               <path d="M12 8l4 4-4 4M8 12h7"></path>
             </svg>
           </div>
-          <div style="display: grid; gap: 14px">
+          <div class="card-content-grid">
             <div>
               <div class="stat-unit">Sensor 1</div>
               <div class="stat-value" id="sensor1">OFF</div>
@@ -136,34 +185,34 @@
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
             </svg>
           </div>
-          <div style="display: grid; gap: 14px">
+          <div class="card-content-grid">
             <div>
               <div class="stat-unit">Partisi</div>
-              <div class="stat-value" id="partitionHours">0 Jam</div>
+              <div class="stat-value" id="partitionHours">-</div>
             </div>
             <div>
               <div class="stat-unit">Laju Saat Ini</div>
-              <div class="stat-value" id="currentRate">0.0 %</div>
+              <div class="stat-value" id="currentRate">-</div>
             </div>
             <div>
               <div class="stat-unit">Laju Baseline</div>
-              <div class="stat-value" id="baselineRate">0.0 %</div>
+              <div class="stat-value" id="baselineRate">-</div>
             </div>
             <div>
               <div class="stat-unit">Deviasi</div>
-              <div class="stat-value" id="deviationPct">0.0 %</div>
+              <div class="stat-value" id="deviationPct">-</div>
             </div>
             <div>
               <div class="stat-unit">Ambang Birahi</div>
-              <div class="stat-value" id="estrusThreshold">0.0 %</div>
+              <div class="stat-value" id="estrusThreshold">-</div>
             </div>
             <div>
               <div class="stat-unit">Sampel Baseline</div>
-              <div class="stat-value" id="baselineSamples">0 Sampel</div>
+              <div class="stat-value" id="baselineSamples">-</div>
             </div>
             <div>
               <div class="stat-unit">Baseline Valid</div>
-              <div class="stat-value" id="baselineValid">Tidak Valid</div>
+              <div class="stat-value" id="baselineValid">-</div>
             </div>
             <div>
               <div class="stat-unit">Status Birahi</div>
@@ -188,72 +237,27 @@
               <line x1="23" y1="13" x2="23" y2="11"></line>
             </svg>
           </div>
-          <div style="display: grid; gap: 14px">
+          <div class="card-content-grid">
             <div>
-              <div class="stat-unit">Battery Level</div>
-              <div class="stat-value" id="batteryPercent">0%</div>
+              <div class="stat-unit">Baterai</div>
+              <div class="stat-value" id="batteryPercent">-</div>
             </div>
             <div>
-              <div class="stat-unit">Remaining Days</div>
-              <div class="stat-value" id="batteryDays">0</div>
+              <div class="stat-unit">Perkiraan Habis (Hari)</div>
+              <div class="stat-value" id="batteryDays">-</div>
             </div>
-            <div
-              style="display: flex; justify-content: space-between; gap: 12px"
-            >
-              <div>
-                <div class="stat-unit">Voltage</div>
-                <div id="batteryVoltage">0.0 V</div>
-              </div>
-              <div>
-                <div class="stat-unit">Current</div>
-                <div id="batteryCurrent">0.0 A</div>
-              </div>
-              <div>
-                <div class="stat-unit">Power</div>
-                <div id="batteryPower">0.00 W</div>
-              </div>
+            <div>
+              <div class="stat-unit">Voltase (V)</div>
+              <div id="batteryVoltage">-</div>
             </div>
-          </div>
-        </div>
-
-        <!-- Alarm Master -->
-        <div
-          class="card"
-          style="
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-          "
-        >
-          <div>
-            <div style="font-weight: bold; font-size: 0.9rem">Master Alarm</div>
-            <div
-              id="alarm-text"
-              style="font-size: 0.75rem; color: var(--text-muted)"
-            >
-              Status: Aktif & Siaga
+            <div>
+              <div class="stat-unit">Arus (mA)</div>
+              <div id="batteryCurrent">-</div>
             </div>
-          </div>
-          <div style="position: relative">
-            <div id="ring" class="pulse-ring"></div>
-            <button
-              id="alarmButton"
-              class="alarm-btn alarm-inactive"
-              onclick="stopAlarm()"
-            >
-              <svg
-                id="icon-alarm"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-            </button>
+            <div>
+              <div class="stat-unit">Daya (mW)</div>
+              <div id="batteryPower">-</div>
+            </div>
           </div>
         </div>
 
@@ -275,23 +279,21 @@
               <path d="M12 6v6l4 2"></path>
             </svg>
           </div>
-          <div style="display: grid; gap: 10px">
+          <div class="card-content-grid">
             <div>
-              <div class="stat-unit">Waktu Sekarang Node Ini</div>
-              <div class="stat-value" id="rtcTime">--:--:--</div>
+              <div class="stat-unit">Waktu Node</div>
+              <div class="stat-value" id="rtcTime">-</div>
             </div>
             <div>
-              <div class="stat-unit">Waktu Sekarang di Perangkat Kamu</div>
-              <div class="stat-value" id="deviceTime">--:--:--</div>
+              <div class="stat-unit">Waktu Realtime</div>
+              <div class="stat-value" id="deviceTime">-</div>
             </div>
             <div>
-              <div class="stat-unit">
-                Selisih Waktu Node dengan Perangkat Kamu
-              </div>
+              <div class="stat-unit">Selisih Waktu</div>
               <div class="stat-value" id="rtcDrift">-</div>
             </div>
             <div>
-              <div class="stat-unit">Status Sinkronisasi</div>
+              <div class="stat-unit">Status</div>
               <div class="stat-value" id="rtcSyncStatus">-</div>
             </div>
             <div>
@@ -318,17 +320,18 @@
       </div>
 
       <div class="main-layout">
-        <!-- Grafik Sisi Kiri -->
+        <!-- Riwayat Aktivitas -->
         <div class="card">
           <div
             style="
               display: flex;
               justify-content: space-between;
               align-items: center;
+              margin-bottom: 12px;
             "
           >
-            <h3 style="font-size: 1rem">Histori Aktivitas</h3>
-            <div style="display: flex; gap: 12px">
+            <h3 style="font-size: 1rem">Riwayat Aktivitas</h3>
+            <div style="display: flex; gap: 20px">
               <!-- input date history -->
               <input id="historyDate" type="date" />
               <!-- load history button -->
@@ -338,7 +341,7 @@
                   loadHistory(document.getElementById('historyDate').value, 0)
                 "
               >
-                Load data
+                Ambil Data
               </button>
               <!-- download history button -->
               <button
@@ -348,6 +351,7 @@
                   downloadCSV(document.getElementById('historyDate').value)
                 "
               >
+                Unduh
                 <svg
                   width="14"
                   height="14"
@@ -376,7 +380,7 @@
                   <th>S2</th>
                   <th>D1</th>
                   <th>D2</th>
-                  <th>Dev%</th>
+                  <th>Deviasi (%)</th>
                   <th>Estrus</th>
                   <th>Voltage</th>
                   <th>Current</th>
@@ -389,16 +393,16 @@
             <div
               style="
                 display: flex;
-                justify-content: space-between;
+                justify-content: center;
                 align-items: center;
-                margin-top: 8px;
+                margin-top: 12px;
               "
             >
-              <div>
+              <div style="display: flex; gap: 20px; align-items: center">
                 <button class="btn" onclick="prevHistory()">Prev</button>
+                <div>Halaman: <span id="historyPage">-</span></div>
                 <button class="btn" onclick="nextHistory()">Next</button>
               </div>
-              <div>Page: <span id="historyPage">0</span></div>
             </div>
           </div>
         </div>
@@ -408,7 +412,7 @@
         <div class="card config-panel">
           <div
             class="form-group full-width"
-            style="margin-top: 8px; margin-bottom: 18px"
+            style="margin-top: 0; margin-bottom: 10px"
           >
             <strong>Konfigurasi Perangkat</strong>
           </div>
@@ -451,14 +455,14 @@
                 <input
                   type="text"
                   id="apPassword"
-                  placeholder="8-20 chars"
+                  placeholder="8 - 20 karakter"
                   onchange="showRestartWarn()"
                   readonly
                 />
               </div>
 
               <!-- SENSOR -->
-              <div class="form-group full-width" style="margin-top: 8px">
+              <div class="form-group full-width" style="margin-top: 6px">
                 <strong>Sensor</strong>
               </div>
 
@@ -478,12 +482,13 @@
                   min="10"
                   max="3600"
                   step="1"
+                  placeholder="10 ~ 3600"
                   required
                 />
               </div>
 
               <!-- ALARM -->
-              <div class="form-group full-width" style="margin-top: 8px">
+              <div class="form-group full-width" style="margin-top: 6px">
                 <strong>Alarm</strong>
               </div>
 
@@ -504,7 +509,7 @@
               </div>
 
               <!-- MODEL BIRAHI -->
-              <div class="form-group full-width" style="margin-top: 8px">
+              <div class="form-group full-width" style="margin-top: 6px">
                 <strong>Model Birahi</strong>
               </div>
 
@@ -516,71 +521,7 @@
                   min="1"
                   max="24"
                   step="1"
-                  required
-                />
-              </div>
-
-              <div class="form-group">
-                <label>Ambang Birahi (%)</label>
-                <input
-                  type="number"
-                  id="estrusCfg"
-                  min="0"
-                  max="500"
-                  step="0.1"
-                  required
-                />
-              </div>
-
-              <div class="form-group">
-                <label>Min. Sampel Baseline</label>
-                <input
-                  type="number"
-                  id="baselineCfg"
-                  min="1"
-                  max="1000"
-                  step="1"
-                  required
-                />
-              </div>
-
-              <div class="form-group">
-                <label>Timeout Kotor (sampel)</label>
-                <input
-                  type="number"
-                  id="dirtyCfg"
-                  min="1"
-                  max="1000"
-                  step="1"
-                  required
-                />
-              </div>
-
-              <!-- BATTERY -->
-              <div class="form-group full-width" style="margin-top: 8px">
-                <strong>Baterai & Daya</strong>
-              </div>
-
-              <div class="form-group">
-                <label>Ambang Arus (mA)</label>
-                <input
-                  type="number"
-                  id="currentThreshold"
-                  min="100"
-                  max="150"
-                  step="0.1"
-                  required
-                />
-              </div>
-
-              <div class="form-group">
-                <label>Ambang Daya (mW)</label>
-                <input
-                  type="number"
-                  id="powerThreshold"
-                  min="400"
-                  max="600"
-                  step="0.1"
+                  placeholder="1 ~ 24"
                   required
                 />
               </div>
@@ -593,6 +534,77 @@
                   min="1"
                   max="14"
                   step="1"
+                  placeholder="1 ~ 14"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label>Ambang Birahi (%)</label>
+                <input
+                  type="number"
+                  id="estrusCfg"
+                  min="0.1"
+                  max="100"
+                  step="0.1"
+                  placeholder="0.1 ~ 100"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label>Min. Sampel Baseline</label>
+                <input
+                  type="number"
+                  id="baselineCfg"
+                  min="10"
+                  max="1000"
+                  step="1"
+                  placeholder="10 ~ 1000"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label>Durasi Cek Sensor Kotor (Jam)</label>
+                <input
+                  type="number"
+                  id="dirtyCfg"
+                  min="1"
+                  max="24"
+                  step="1"
+                  placeholder="1 ~ 24"
+                  required
+                />
+              </div>
+
+              <!-- BATTERY -->
+              <div class="form-group full-width" style="margin-top: 6px">
+                <strong>Baterai & Daya</strong>
+              </div>
+
+              <div class="form-group">
+                <label>Ambang Arus (mA)</label>
+                <input
+                  type="number"
+                  id="currentThreshold"
+                  min="100"
+                  max="150"
+                  step="0.1"
+                  placeholder="100 ~ 150"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label>Ambang Daya (mW)</label>
+                <input
+                  type="number"
+                  id="powerThreshold"
+                  min="400"
+                  max="600"
+                  step="0.1"
+                  placeholder="400 ~ 600"
                   required
                 />
               </div>
@@ -661,5 +673,65 @@
       window.API_BASE = window.location.origin;
     </script>
     <script src="app.js"></script>
+    <script>
+      // Sync alarm button classes between mobile center and desktop header
+      (function () {
+        function safeGet(id) {
+          return document.getElementById(id);
+        }
+        const a1 = safeGet("alarmButton");
+        const a2 = safeGet("alarmButtonDesktop");
+        const ring = safeGet("ring");
+        const ringDesktop = safeGet("ringDesktop");
+        if (!a1 || !a2) return;
+
+        // Mirror class changes from one to the other
+        const mirror = (src, dst) => {
+          const cls = src.className;
+          if (dst.className !== cls) dst.className = cls;
+        };
+
+        const obs = new MutationObserver((mutations) => {
+          mutations.forEach((m) => {
+            if (m.attributeName === "class") {
+              mirror(m.target === a1 ? a1 : a2, m.target === a1 ? a2 : a1);
+            }
+          });
+        });
+
+        obs.observe(a1, { attributes: true, attributeFilter: ["class"] });
+        obs.observe(a2, { attributes: true, attributeFilter: ["class"] });
+
+        // Keep ring visibility in sync
+        const syncRing = () => {
+          if (
+            a1.classList.contains("alarm-active") ||
+            a2.classList.contains("alarm-active")
+          ) {
+            if (ring) ring.style.display = "block";
+            if (ringDesktop) ringDesktop.style.display = "block";
+          } else {
+            if (ring) ring.style.display = "none";
+            if (ringDesktop) ringDesktop.style.display = "none";
+          }
+        };
+
+        // Initial sync
+        syncRing();
+
+        // Observe class attribute to update ring
+        const ringObs = new MutationObserver(syncRing);
+        ringObs.observe(a1, { attributes: true, attributeFilter: ["class"] });
+        ringObs.observe(a2, { attributes: true, attributeFilter: ["class"] });
+
+        // Ensure clicks call the same handler (stopAlarm exists in app.js)
+        a1.addEventListener("click", () => {
+          if (typeof stopAlarm === "function") stopAlarm();
+        });
+        a2.addEventListener("click", () => {
+          if (typeof stopAlarm === "function") stopAlarm();
+        });
+      })();
+    </script>
   </body>
 </html>
