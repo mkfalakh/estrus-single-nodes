@@ -6,7 +6,7 @@
 #include "logger.h"
 #include <Adafruit_NeoPixel.h>
 
-#define RGB_BUILTIN_PIN 48  // pin default LED RGB ESP32-S3 
+#define RGB_BUILTIN_PIN 48  // pin default LED RGB ESP32-S3
 #define LED_FREQ 5000
 #define LED_RES 8
 
@@ -26,16 +26,10 @@ static unsigned long wifiWakeTs = 0;
 // helper
 void setLED(uint8_t r, uint8_t g, uint8_t b) {
   // use PWM hardware (pin adc)
-  ledcAttach(LED_R, LED_FREQ, LED_RES);
-  ledcAttach(LED_G, LED_FREQ, LED_RES);
-  ledcAttach(LED_B, LED_FREQ, LED_RES);
-
-  delayMicroseconds(200);
-
   // common anode LED RGB 4 kaki | LED RGB eksternal
-  analogWrite(LED_R, 255 - r);
-  analogWrite(LED_G, 255 - g);
-  analogWrite(LED_B, 255 - b);
+  ledcWrite(LED_R, 255 - r);
+  ledcWrite(LED_G, 255 - g);
+  ledcWrite(LED_B, 255 - b);
 
   // LED RGB bawaan ESP32-S3
   builtinRGB.setPixelColor(0, builtinRGB.Color(r, g, b));
@@ -60,32 +54,33 @@ inline void ledBlue() {
 }
 
 inline void ledYellow() {
-  setLED(255, 255, 0);
+  setLED(200, 255, 0);
 }
 
-inline void ledOrange() {
-  setLED(255, 100, 0);
+inline void ledPurple() {
+  setLED(150, 0, 255);
 }
 
 // tes led
 void testLEDColors() {
 
   ledRed();
-  delay(1000);
+  delay(500);
 
   ledGreen();
-  delay(1000);
+  delay(500);
 
   ledBlue();
-  delay(1000);
+  delay(500);
 
   ledYellow();
-  delay(1000);
+  delay(500);
 
-  ledOrange();
-  delay(1000);
+  ledPurple();
+  delay(500);
 
-  // ledOff();
+  ledOff();
+  delay(500);
 }
 
 // init led
@@ -95,6 +90,10 @@ void initLED() {
   pinMode(LED_G, OUTPUT);
   pinMode(LED_B, OUTPUT);
 
+  ledcAttach(LED_R, LED_FREQ, LED_RES);
+  ledcAttach(LED_G, LED_FREQ, LED_RES);
+  ledcAttach(LED_B, LED_FREQ, LED_RES);
+
   // LED RGB bawaan esp32s3
   builtinRGB.begin();
   builtinRGB.setBrightness(50);
@@ -102,7 +101,7 @@ void initLED() {
   builtinRGB.show();
 
   testLEDColors();
-  ledOff();
+  // ledOff();
 
   Serial.println("✅ LED Ready");
 }
@@ -165,7 +164,7 @@ void ledTask(void *pv) {
 
         case LED_SENSOR_DIRTY:
           logToFile(
-            "💡 LED -> SENSOR DIRTY (ORANGE) S1:%d S2:%d",
+            "💡 LED -> SENSOR DIRTY (PURPLE) S1:%d S2:%d",
             SYS.sensor1_dirty,
             SYS.sensor2_dirty);
           break;
@@ -221,7 +220,7 @@ void ledTask(void *pv) {
         break;
 
       // ====================
-      // SENSOR DIRTY (ORANYE)
+      // SENSOR DIRTY (UNGU)
       // ====================
       case LED_SENSOR_DIRTY:
 
@@ -232,7 +231,7 @@ void ledTask(void *pv) {
           ledOn = !ledOn;
 
           if (ledOn) {
-            ledOrange();
+            ledPurple();
           } else {
             ledOff();
           }
