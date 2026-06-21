@@ -101,10 +101,10 @@ void loop() {
 
     Serial.println("=========  SYSTEM STATE  ==========\n");
 
-    Serial.printf("ERR: %d | RTCSync: %d | SD: %d | RTC: %d | INA: %d | ESTRUS: %d | BUZZ: %d",
+    Serial.printf("ERR: %d | RTCSync: %d | SD: %d | RTC: %d | INA: %d | ESTRUS: %d | BUZZ: %d\n",
                   sysIsSystemFault(), SYS.rtc_ever_synced, SYS.sd_ok, SYS.rtc_ok, SYS.ina_ok, sysIsEstrus(), sysIsAlarm());
 
-    Serial.println("========== RAM & Storage ==========");
+    Serial.println("========== RAM & Storage ==========\n");
 
     // checkFreeSD();
 
