@@ -47,7 +47,7 @@ const el = {
   // status badges
   sdStatus: document.getElementById("sdStatus"),
   rtcStatus: document.getElementById("rtcStatus"),
-  sensorStatus: document.getElementById("sensorStatus"),
+  inaStatus: document.getElementById("inaStatus"),
   alarmStatus: document.getElementById("alarmStatus"),
   wifiStatus: document.getElementById("wifiStatus"),
   batteryStatus: document.getElementById("batteryStatus"),
@@ -107,10 +107,10 @@ async function apiJson(path, options = {}) {
   }
 }
 
-function showLogin() {
-  // for WebView and browser, redirect to login
-  window.location.href = `${API_BASE}/login.html`;
-}
+// function showLogin() {
+//   // for WebView and browser, redirect to login
+//   window.location.href = `${API_BASE}/login.html`;
+// }
 
 // showToast
 function showToast(msg, type = "info") {
@@ -124,26 +124,26 @@ function showToast(msg, type = "info") {
 }
 
 // Auth
-async function checkAuth() {
-  try {
-    await apiJson(`/api/check`);
-    document.body.classList.add("auth-ok");
-    startDashboard();
-  } catch (e) {
-    showLogin();
-  }
-}
+// async function checkAuth() {
+//   try {
+//     await apiJson(`/api/check`);
+//     document.body.classList.add("auth-ok");
+//     startDashboard();
+//   } catch (e) {
+//     showLogin();
+//   }
+// }
 
-async function logoutSession() {
-  if (!confirm("Keluar dari dashboard?")) return;
-  try {
-    await apiJson(`/api/logout`);
-    showLogin();
-  } catch (e) {
-    console.error(e);
-    showToast("Logout gagal", "error");
-  }
-}
+// async function logoutSession() {
+//   if (!confirm("Keluar dari dashboard?")) return;
+//   try {
+//     await apiJson(`/api/logout`);
+//     showLogin();
+//   } catch (e) {
+//     console.error(e);
+//     showToast("Logout gagal", "error");
+//   }
+// }
 
 // sync RTC Button Handler
 async function syncRTC() {
@@ -160,21 +160,11 @@ async function syncRTC() {
       }),
     });
 
-    if (el.syncRtcBtn) {
-      el.syncRtcBtn.disabled = true;
-      el.syncRtcBtn.innerText = "Menyinkronkan...";
-    }
-
     showToast("RTC berhasil disinkronkan", "success");
 
     await loadRTC();
   } catch (err) {
     console.error(err);
-
-    if (el.syncRtcBtn) {
-      el.syncRtcBtn.disabled = false;
-      el.syncRtcBtn.innerText = "Sinkronkan RTC";
-    }
 
     showToast("Gagal sinkronisasi RTC", "error");
   }
@@ -186,6 +176,7 @@ async function loadRTC() {
     const rtc = await apiJson("/api/rtc");
 
     if (!rtc) {
+      showToast("Gagal memuat status RTC", "error");
       return;
     }
 
@@ -269,11 +260,6 @@ async function loadRTC() {
 
       disableButton = true;
       el.syncRtcBtn.style.display = "none";
-    } else if (drift <= 60) {
-      status = `Selisih ${drift} detik`;
-
-      disableButton = false;
-      el.syncRtcBtn.style.display = "block";
     } else {
       status = `Perlu Sinkronisasi`;
 
@@ -349,7 +335,7 @@ async function startDashboard() {
     } finally {
       dashboardBusy = false;
     }
-  }, 5000);
+  }, 10000);
 }
 
 // LATEST
@@ -365,13 +351,6 @@ async function loadLatest() {
 
 function renderLatest(data) {
   if (!data) return;
-
-  // node title already set by loadDevice, but keep fallback
-  if (el.nodeTitle)
-    el.nodeTitle.innerText = data.node_id || el.nodeTitle.innerText;
-
-  if (el.animalIdLabel)
-    el.animalIdLabel.innerText = data.animal_id || el.animalIdLabel.innerText;
 
   // rtc/time
   const rtcEl = document.getElementById("rtcTimeHeader");
@@ -389,7 +368,7 @@ function renderLatest(data) {
   if (el.batteryPercent)
     el.batteryPercent.innerText = `${Number(data.battery_percent || 0)} %`;
   if (el.batteryDays)
-    el.batteryDays.innerText = `${Number(data.battery_days || 0)}`;
+    el.batteryDays.innerText = `${Number(data.battery_days || 0)} Hari`;
   if (el.batteryVoltage)
     el.batteryVoltage.innerText = `${Number(data.voltage || 0).toFixed(2)} V`;
   if (el.batteryCurrent)
@@ -400,23 +379,21 @@ function renderLatest(data) {
   // status badges
   updateBadge(el.sdStatus, data.sd);
   updateBadge(el.rtcStatus, data.rtc);
-  updateBadge(el.sensorStatus, data.sensor);
+  updateBadge(el.inaStatus, data.ina);
   updateBadge(el.wifiStatus, data.wifi);
-  updateBadge(el.alarmStatus, data.buzzer);
+  updateBadge(el.alarmStatus, data.alarm);
   updateBadge(el.batteryStatus, !data.low_battery);
 
   // alarm UI
   if (el.alarmButton) {
-    if (data.buzzer) {
+    if (data.alarm) {
       el.alarmButton.className = "alarm-btn alarm-active";
       el.alarmButton.disabled = false;
       if (el.ringAlarm) el.ringAlarm.style.display = "block";
-      if (el.textAlarm) el.textAlarm.innerText = "Status: Berbunyi";
     } else {
       el.alarmButton.className = "alarm-btn alarm-inactive";
       el.alarmButton.disabled = true;
       if (el.ringAlarm) el.ringAlarm.style.display = "none";
-      if (el.textAlarm) el.textAlarm.innerText = "Status: Dimatikan";
     }
   }
 }
@@ -480,7 +457,13 @@ async function loadConfig() {
 
 function fillConfigForm(cfg) {
   setValue("nodeId", cfg.node_id);
+  if (el.nodeTitle)
+    el.nodeTitle.innerText = cfg.node_id || el.nodeTitle.innerText;
+
   setValue("animalId", cfg.animal_id);
+  if (el.animalIdLabel)
+    el.animalIdLabel.innerText = cfg.animal_id || el.animalIdLabel.innerText;
+
   setValue("apPassword", cfg.ap_password);
   setValue("proxLow", cfg.prox_low ? 1 : 0);
   setValue("alarmEnabled", cfg.alarm_enabled ? 1 : 0);
@@ -491,7 +474,7 @@ function fillConfigForm(cfg) {
   setValue("estrusCfg", cfg.estrus_threshold_pct);
   setValue("stopAfterAlarm", cfg.stop_after_alarm ? 1 : 0);
   setValue("baselineCfg", cfg.min_baseline_samples);
-  setValue("dirtyCfg", cfg.dirty_timeout_samples);
+  setValue("dirtyCfg", cfg.dirty_timeout_hours);
 
   setValue("currentThreshold", cfg.current_threshold);
   setValue("powerThreshold", cfg.power_threshold);
@@ -579,23 +562,22 @@ function validateRange(id, min, max) {
 }
 
 function validateConfig() {
-  console.log("node", validateNodeId());
+  let valid = true;
 
-  console.log("animal", validateAnimalId());
+  if (!validateNodeId()) valid = false;
+  if (!validateAnimalId()) valid = false;
+  if (!validatePasswordAP()) valid = false;
 
-  console.log("record", validateRange("recordInterval", 10, 3600));
+  if (!validateRange("recordCfg", 10, 3600)) valid = false;
+  if (!validateRange("retentionCfg", 1, 14)) valid = false;
+  if (!validateRange("partitionCfg", 1, 24)) valid = false;
+  if (!validateRange("estrusCfg", 0.1, 100)) valid = false;
+  if (!validateRange("baselineCfg", 10, 1000)) valid = false;
+  if (!validateRange("dirtyCfg", 1, 24)) valid = false;
+  if (!validateRange("currentThreshold", 100, 150)) valid = false;
+  if (!validateRange("powerThreshold", 400, 600)) valid = false;
 
-  console.log("retain", validateRange("retentionDays", 1, 14));
-
-  console.log("baseline", validateRange("baselineSamples", 10, 1000));
-
-  console.log("dirty", validateRange("dirtySamples", 10, 1000));
-
-  console.log("current", validateRange("currentThreshold", 100, 150));
-
-  console.log("power", validateRange("powerThreshold", 400, 600));
-
-  return true;
+  return valid;
 }
 
 // SAVE CONFIG
@@ -621,7 +603,7 @@ async function saveConfig() {
       animal_id: animalId,
       ap_password: document.getElementById("apPassword")?.value || "estrus123",
 
-      prox_low: Number(document.getElementById("proxLow")?.value || 0),
+      prox_active_low: Number(document.getElementById("proxLow")?.value || 0),
 
       alarm_enabled: Number(
         document.getElementById("alarmEnabled")?.value || 0,
@@ -629,19 +611,19 @@ async function saveConfig() {
 
       // ESTRUS
       record_interval_sec: Number(
-        document.getElementById("recordInterval")?.value || 10,
+        document.getElementById("recordCfg")?.value || 10,
       ),
 
       retention_days: Number(
-        document.getElementById("retentionDays")?.value || 7,
+        document.getElementById("retentionCfg")?.value || 7,
       ),
 
       partition_hours: Number(
-        document.getElementById("partitionHours")?.value || 3,
+        document.getElementById("partitionCfg")?.value || 3,
       ),
 
       estrus_threshold_pct: Number(
-        document.getElementById("estrusThreshold")?.value || 6,
+        document.getElementById("estrusCfg")?.value || 6,
       ),
 
       stop_after_alarm: Number(
@@ -649,11 +631,11 @@ async function saveConfig() {
       ),
 
       min_baseline_samples: Number(
-        document.getElementById("baselineSamples")?.value || 10,
+        document.getElementById("baselineCfg")?.value || 10,
       ),
 
-      dirty_timeout_samples: Number(
-        document.getElementById("dirtySamples")?.value || 240,
+      dirty_timeout_hours: Number(
+        document.getElementById("dirtyCfg")?.value || 2,
       ),
 
       // BATTERY
@@ -680,7 +662,7 @@ async function saveConfig() {
       showToast("Konfigurasi tersimpan", "success");
 
       if (res.restart) {
-        showToast("Perangkat akan restart karena perubahan konfigurasi");
+        showToast("Perangkat akan restart karena perubahan ID");
       }
 
       await loadConfig();
