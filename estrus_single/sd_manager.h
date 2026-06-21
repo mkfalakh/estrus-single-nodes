@@ -4,7 +4,6 @@
 #include <freertos/semphr.h>
 
 extern SemaphoreHandle_t sdMutex;
-extern volatile const char* sdMutexOwner;
 
 bool takeSDMutex(const char* owner, TickType_t timeout = pdMS_TO_TICKS(500));
 void giveSDMutex();
