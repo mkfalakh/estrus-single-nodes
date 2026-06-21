@@ -11,7 +11,7 @@
 
 static SPIClass spiSD(FSPI);  // 🔥 ESP32-S3 pakai FSPI
 
-volatile const char* sdMutexOwner = nullptr;
+static const char* sdMutexOwner = nullptr;
 
 // helper
 bool takeSDMutex(const char* owner, TickType_t timeout) {
@@ -37,7 +37,9 @@ bool takeSDMutex(const char* owner, TickType_t timeout) {
     Serial.printf(
       "[SDMUTEX] TAKE TIMEOUT (%s), owner=%s\n",
       owner,
-      sdMutexOwner ? sdMutexOwner : "UNKNOWN");
+      (sdMutexOwner && strlen(sdMutexOwner))
+        ? sdMutexOwner
+        : "UNKNOWN");
   }
 
   return ok;
@@ -45,13 +47,27 @@ bool takeSDMutex(const char* owner, TickType_t timeout) {
 
 void giveSDMutex() {
 
+  if (!sdMutex) {
+    return;
+  }
+
+  if (xSemaphoreGetMutexHolder(sdMutex)
+      != xTaskGetCurrentTaskHandle()) {
+
+    Serial.printf(
+      "[SDMUTEX] INVALID GIVE by %s\n",
+      pcTaskGetName(nullptr));
+
+    return;
+  }
+
   Serial.printf(
     "[SDMUTEX] GIVE (%s)\n",
     sdMutexOwner ? sdMutexOwner : "UNKNOWN");
 
-  sdMutexOwner = nullptr;
-
   xSemaphoreGive(sdMutex);
+
+  sdMutexOwner = nullptr;
 }
 
 void createSDMutex() {
