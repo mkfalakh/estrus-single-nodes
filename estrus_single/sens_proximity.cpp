@@ -16,8 +16,8 @@
 
 static bool proxActiveLow = true;
 
-static uint16_t sensor1ActiveSince = 0;
-static uint16_t sensor2ActiveSince = 0;
+static uint32_t sensor1ActiveSince = 0;
+static uint32_t sensor2ActiveSince = 0;
 
 static bool lastSensor1 = false;
 static bool lastSensor2 = false;
@@ -27,24 +27,17 @@ static bool lastSensor2 = false;
 // ========================
 void updateDirtyDetection(bool s1, bool s2) {
 
-  uint32_t dirtyMs =
-    ((uint32_t)sysConfig.dirty_timeout_hours * 3600000UL);
+  uint32_t timeoutSec =
+    sysConfig.dirty_timeout_hours * 3600UL;
 
-  // ==========================
   // SENSOR 1
-  // ==========================
-
   if (s1) {
 
-    if (sensor1ActiveSince == 0) {
+    sensor1ActiveSince +=
+      sysConfig.record_interval_sec;
 
-      sensor1ActiveSince = millis();
-    }
-
-    if (!SYS.sensor1_dirty && millis() - sensor1ActiveSince >= dirtyMs) {
-
-      SYS.sensor1_dirty = true;
-    }
+    SYS.sensor1_dirty =
+      (sensor1ActiveSince >= timeoutSec);
 
   } else {
 
@@ -52,27 +45,29 @@ void updateDirtyDetection(bool s1, bool s2) {
     SYS.sensor1_dirty = false;
   }
 
-  // ==========================
   // SENSOR 2
-  // ==========================
-
   if (s2) {
 
-    if (sensor2ActiveSince == 0) {
+    sensor2ActiveSince +=
+      sysConfig.record_interval_sec;
 
-      sensor2ActiveSince = millis();
-    }
-
-    if (!SYS.sensor2_dirty && millis() - sensor2ActiveSince >= dirtyMs) {
-
-      SYS.sensor2_dirty = true;
-    }
+    SYS.sensor2_dirty =
+      (sensor2ActiveSince >= timeoutSec);
 
   } else {
 
     sensor2ActiveSince = 0;
     SYS.sensor2_dirty = false;
   }
+
+  logToFile(
+    "DIRTY S1=%lu/%lu S2=%lu/%lu",
+
+    sensor1ActiveSince,
+    timeoutSec,
+
+    sensor2ActiveSince,
+    timeoutSec);
 }
 
 // RESET DIRTY DETECTION
@@ -117,12 +112,12 @@ void sensorTask(void *pv) {
       bool s2 = readProx2();
 
       // cek perubahan state sensor
-      Serial.printf("[STATE] s1: %d | s2: %d\n", s1, s2);
+      Serial.printf("[SENSOR STATE] s1: %d | s2: %d\n", s1, s2);
 
       updateDirtyDetection(s1, s2);
 
-      bool d1 = sysIsSensor1Dirty();
-      bool d2 = sysIsSensor2Dirty();
+      bool d1 = SYS.sensor1_dirty;
+      bool d2 = SYS.sensor2_dirty;
 
       // ==========================
       // SENSOR 1 DIRTY EVENT
@@ -136,7 +131,7 @@ void sensorTask(void *pv) {
           }
 
           logToFile(
-            "🟠 Sensor 1 dirty detected");
+            "🟣 Sensor 1 dirty detected");
 
         } else {
 
@@ -175,7 +170,7 @@ void sensorTask(void *pv) {
           }
 
           logToFile(
-            "🟠 Sensor 2 dirty detected");
+            "🟣 Sensor 2 dirty detected");
 
         } else {
 
@@ -201,10 +196,6 @@ void sensorTask(void *pv) {
 
         lastD2 = d2;
       }
-
-      // set sensor dirty
-      sysSetSensor1Dirty(d1);
-      sysSetSensor2Dirty(d2);
 
       // standing definition
       bool standing = (s1 || s2);
@@ -364,7 +355,7 @@ void sensorTask(void *pv) {
       // ==========================
       if (millis() - lastDebug >= 60000) {
         logToFile(
-          "S:%d/%d D:%d/%d "
+          "S1:%d S2:%d D1:%d D2:%d "
           "| Rate:%.1f%% "
           "Base:%.1f%% "
           "Dev:%.1f%% "
