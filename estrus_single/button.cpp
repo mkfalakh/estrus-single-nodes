@@ -109,8 +109,8 @@ ButtonEvent getButtonEvent() {
 
   static bool longHandled = false;
 
-  const unsigned long DEBOUNCE_MS = 100;
-  const unsigned long DOUBLE_MS = 700;
+  const unsigned long DEBOUNCE_MS = 50;
+  const unsigned long DOUBLE_MS = 250;
   const unsigned long LONG_MS = 8000;
 
   unsigned long now = millis();
