@@ -115,6 +115,7 @@ static const char* CSV_COLUMNS[] = {
   "current",
   "battery_pct"
 };
+
 static const int CSV_COLUMN_COUNT = sizeof(CSV_COLUMNS) / sizeof(CSV_COLUMNS[0]);
 
 // fields yang ditulis sebagai string di JSON (sisanya angka/bool, tanpa quote)
@@ -137,9 +138,26 @@ static String csvRowToJson(const char* line) {
 
     if (i == len || line[i] == ',') {
 
-      String value = String(line).substring(start, i);
+      // String value = String(line).substring(start, i);
+
+      char value[64];
+
+      int fieldLen = min(i - start, (int)sizeof(value) - 1);
+
+      memcpy(value, line + start, fieldLen);
+
+      value[fieldLen] = '\0';
 
       if (col > 0) json += ",";
+
+      if (col >= CSV_COLUMN_COUNT) {
+
+        logToFile(
+          "CSV COLUMN OVERFLOW col=%d",
+          col);
+
+        break;
+      }
 
       json += "\"";
       json += CSV_COLUMNS[col];
@@ -147,9 +165,9 @@ static String csvRowToJson(const char* line) {
 
       if (isCsvStringField(CSV_COLUMNS[col])) {
         json += "\"";
-        json += escapeJson(value.c_str());
+        json += escapeJson(value);
         json += "\"";
-      } else if (value.length() == 0) {
+      } else if (value[0] == '\0') {
         json += "0";
       } else {
         json += value;
@@ -313,15 +331,15 @@ void handleHistory() {
     return;
   }
 
-  if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
+  // if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
 
-    server.send(
-      503,
-      "application/json",
-      "{\"error\":\"sd_busy\"}");
+  //   server.send(
+  //     503,
+  //     "application/json",
+  //     "{\"error\":\"sd_busy\"}");
 
-    return;
-  }
+  //   return;
+  // }
 
   int page = 0;
   int limit = DEFAULT_LIMIT;
@@ -333,6 +351,8 @@ void handleHistory() {
   if (!SD.exists(filename)) {
 
     logToFile("⚠️ [history] file not found: " + filename);
+
+    giveSDMutex();
 
     server.send(
       200,
@@ -372,6 +392,16 @@ void handleHistory() {
 
   sysSetSD(true);
 
+  // baca ukuran dulu
+  size_t fileSize = file.size();
+
+  logToFile(
+    "file size=%lu",
+    fileSize);
+
+  giveSDMutex();
+
+
   // PAGE
   if (server.hasArg("page")) {
 
@@ -398,39 +428,43 @@ void handleHistory() {
       (long)MAX_LIMIT);
   }
 
-  // char lines[LIMIT][160]; // alternatif jika PSRAM tidak bisa
+  static char lines[MAX_LIMIT][160];  // alternatif jika PSRAM tidak bisa
 
   // coba PSRAM dulu, fallback ke heap biasa jika PSRAM tidak tersedia
-  char(*lines)[160] =
-    (char(*)[160])ps_malloc(
-      limit * sizeof(*lines));
+  // static char(*lines)[160] = (char(*)[160])ps_malloc(limit * sizeof(*lines));
 
-  if (!lines) {
+  // if (!lines) {
 
-    logToFile("⚠️ [history] ps_malloc failed, fallback to malloc, limit=" + String(limit));
+  //   logToFile("⚠️ [history] ps_malloc failed, fallback to malloc, limit=" + String(limit));
 
-    lines = (char(*)[160])malloc(limit * sizeof(*lines));
-  }
+  //   lines = (char(*)[160])malloc(limit * sizeof(*lines));
+  // }
 
-  if (!lines) {
+  // if (!lines) {
 
-    logToFile("❌ [history] malloc failed, limit=" + String(limit));
+  //   logToFile("❌ [history] malloc failed, limit=" + String(limit));
 
-    file.close();
+  //   file.close();
 
-    giveSDMutex();
+  //   giveSDMutex();
 
-    server.send(
-      500,
-      "application/json",
-      "{\"error\":\"oom\"}");
+  //   server.send(
+  //     500,
+  //     "application/json",
+  //     "{\"error\":\"oom\"}");
 
-    return;
-  }
+  //   return;
+  // }
 
   bool hasNext = false;
 
   taskYIELD();
+
+  uint32_t t0 = millis();
+
+  logToFile(
+    "free heap before=%u",
+    ESP.getFreeHeap());
 
   int count =
     readCsvPage(
@@ -440,6 +474,14 @@ void handleHistory() {
       limit,
       hasNext);
 
+  logToFile(
+    "free heap after=%u",
+    ESP.getFreeHeap());
+
+  logToFile(
+    "⏱ readCsvPage = %lu ms",
+    millis() - t0);
+
   file.close();
 
   giveSDMutex();
@@ -448,8 +490,12 @@ void handleHistory() {
 
   String json;
 
-  json.reserve(
-    256 + (count * 180));
+  logToFile(
+    "HEAP before json=%u",
+    ESP.getFreeHeap());
+
+  // json.reserve(256 + (count * 180));
+  json.reserve(8192);
 
   json = "{";
 
@@ -474,6 +520,8 @@ void handleHistory() {
   //   if (i < count - 1) json += ",";
   // }
 
+  t0 = millis();
+
   for (int i = 0; i < count; i++) {
 
     json += csvRowToJson(lines[i]);
@@ -487,6 +535,10 @@ void handleHistory() {
     }
   }
 
+  logToFile(
+    "⏱ jsonBuild = %lu ms",
+    millis() - t0);
+
   json += "],";
 
   json += "\"has_next\":";
@@ -495,11 +547,24 @@ void handleHistory() {
 
   json += "}";
 
+  // if (lines) {
+  //   free(lines);
+  //   lines = nullptr;
+  // }
 
   server.sendHeader("Connection", "close");
+
+  logToFile(
+    "JSON len=%u",
+    json.length());
+
   server.send(200, "application/json", json);
 
-  free(lines);
+  logToFile(
+    "HEAP after json=%u",
+    ESP.getFreeHeap());
+
+  // free(lines);
 }
 
 // ===== HANDLE ALARM =====
@@ -561,14 +626,14 @@ void handleAlarmStart() {
 // ===== HANDLE DOWNLOAD BUTTON =====
 
 // Returns true if columns 0 (device_id) and 1 (animal_id) match sysConfig.
-static bool matchesDeviceFilter(const char *line) {
-  const char *p = line;
-  const char *d0 = p;
+static bool matchesDeviceFilter(const char* line) {
+  const char* p = line;
+  const char* d0 = p;
   while (*p && *p != ',') p++;
   int d0len = p - d0;
   if (!*p) return false;
   p++;
-  const char *d1 = p;
+  const char* d1 = p;
   while (*p && *p != ',') p++;
   int d1len = p - d1;
 
@@ -582,7 +647,7 @@ static bool matchesDeviceFilter(const char *line) {
 
 // Extract "YYYY-MM-DD HH:MM" minute-key from a CSV line.
 // CSV format: device_id,animal_id,YYYY-MM-DD HH:MM:SS,...
-static bool extractMinuteKey(const char *line, char out[17]) {
+static bool extractMinuteKey(const char* line, char out[17]) {
   int commas = 0;
   int i = 0;
   while (line[i] && commas < 2) {
@@ -651,7 +716,7 @@ void handleDownload() {
     sysSetSD(true);
 
     bool firstLine = true;
-    prevLine[0]   = '\0';
+    prevLine[0] = '\0';
     prevMinKey[0] = '\0';
 
     while (file.available()) {
@@ -662,7 +727,10 @@ void handleDownload() {
       if (len > 0 && lineBuf[len - 1] == '\r') lineBuf[--len] = '\0';
       if (len == 0) continue;
 
-      if (firstLine) { firstLine = false; continue; }  // skip CSV header row
+      if (firstLine) {
+        firstLine = false;
+        continue;
+      }  // skip CSV header row
 
       if (!matchesDeviceFilter(lineBuf)) continue;
       if (!extractMinuteKey(lineBuf, curMinKey)) continue;
@@ -1174,7 +1242,7 @@ void handleSetConfig() {
   bool retentionChanged = temp.retention_days != sysConfig.retention_days;
   bool stopAlarmChanged = temp.stop_after_alarm != sysConfig.stop_after_alarm;
   bool baselineSampleChanged = temp.min_baseline_samples != sysConfig.min_baseline_samples;
-  bool dirtySampleChanged = temp.dirty_timeout_hours != sysConfig.dirty_timeout_hours;
+  bool dirtyTimeoutChanged = temp.dirty_timeout_hours != sysConfig.dirty_timeout_hours;
 
   bool currentChanged = temp.current_threshold != sysConfig.current_threshold;
   bool powerChanged = temp.power_threshold != sysConfig.power_threshold;
@@ -1263,7 +1331,7 @@ void handleSetConfig() {
   }
 
   // dirty timeout samples berubah
-  if (dirtySampleChanged) {
+  if (dirtyTimeoutChanged) {
 
     resetDirtyDetection();
 
@@ -1817,8 +1885,8 @@ void initWebServer() {
   ROUTE("/api/node/estrus", HTTP_GET, handleEstrus);    // informasi model estrus
   ROUTE("/api/node/history", HTTP_GET, handleHistory);  // untuk melihat data csv
   // ROUTE("/api/node/health", HTTP_GET, handleHealth);    // untuk cek kesehatan device
-  ROUTE("/api/node/device", HTTP_GET, handleDevice);    // identitas device (node_id, mac, firmware)
-  ROUTE("/api/download", HTTP_GET, handleDownload);     // untuk download data csv
+  ROUTE("/api/node/device", HTTP_GET, handleDevice);  // identitas device (node_id, mac, firmware)
+  ROUTE("/api/download", HTTP_GET, handleDownload);   // untuk download data csv
 
   // RTC | WAKTU DEVICE
   ROUTE("/api/rtc/sync", HTTP_POST, handleRTCSync);    // untuk sinkronisasi waktu RTC
