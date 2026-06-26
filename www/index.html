@@ -153,19 +153,23 @@
           <div class="card-content-grid">
             <div>
               <div class="stat-unit">Sensor 1</div>
-              <div class="stat-value" id="sensor1">OFF</div>
+              <div class="stat-value" id="sensor1">-</div>
             </div>
             <div>
               <div class="stat-unit">Sensor 2</div>
-              <div class="stat-value" id="sensor2">OFF</div>
+              <div class="stat-value" id="sensor2">-</div>
             </div>
             <div>
               <div class="stat-unit">Kondisi Sensor 1</div>
-              <div class="stat-value" id="sensor1Dirty">NORMAL</div>
+              <div class="stat-value" id="sensor1Condition">-</div>
             </div>
             <div>
               <div class="stat-unit">Kondisi Sensor 2</div>
-              <div class="stat-value" id="sensor2Dirty">NORMAL</div>
+              <div class="stat-value" id="sensor2Condition">-</div>
+            </div>
+            <div>
+              <div class="stat-unit">Kondisi Sapi</div>
+              <div class="sapi-berdiri" id="cowCondition">-</div>
             </div>
           </div>
         </div>
@@ -216,7 +220,7 @@
             </div>
             <div>
               <div class="stat-unit">Status Birahi</div>
-              <div id="estrusStatus" class="status-normal">NORMAL</div>
+              <div id="estrusStatus" class="status-normal">-</div>
             </div>
           </div>
         </div>
@@ -242,10 +246,10 @@
               <div class="stat-unit">Baterai</div>
               <div class="stat-value" id="batteryPercent">-</div>
             </div>
-            <div>
+            <!-- <div>
               <div class="stat-unit">Perkiraan Habis (Hari)</div>
               <div class="stat-value" id="batteryDays">-</div>
-            </div>
+            </div> -->
             <div>
               <div class="stat-unit">Voltase (V)</div>
               <div id="batteryVoltage">-</div>
@@ -399,9 +403,15 @@
               "
             >
               <div style="display: flex; gap: 20px; align-items: center">
-                <button class="btn" onclick="prevHistory()">Prev</button>
-                <div>Halaman: <span id="historyPage">-</span></div>
-                <button class="btn" onclick="nextHistory()">Next</button>
+                <button id="btnPrev" class="btn" onclick="prevHistory()" hidden>
+                  Prev
+                </button>
+                <div id="historyPage" hidden>
+                  Halaman: <span id="numberPage">-</span>
+                </div>
+                <button id="btnNext" class="btn" onclick="nextHistory()" hidden>
+                  Next
+                </button>
               </div>
             </div>
           </div>
@@ -461,6 +471,20 @@
                 />
               </div>
 
+              <div class="form-group">
+                <label>
+                  Kecerahan LED (1 - 255) |
+                  <span id="ledBrightnessValue">-</span>
+                </label>
+                <input
+                  id="ledBrightness"
+                  type="range"
+                  min="1"
+                  max="255"
+                  value="10"
+                />
+              </div>
+
               <!-- SENSOR -->
               <div class="form-group full-width" style="margin-top: 6px">
                 <strong>Sensor</strong>
@@ -483,6 +507,32 @@
                   max="3600"
                   step="1"
                   placeholder="10 ~ 3600"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label>Durasi Cek Sensor Kotor (Jam)</label>
+                <input
+                  type="number"
+                  id="dirtyCfg"
+                  min="1"
+                  max="24"
+                  step="1"
+                  placeholder="1 ~ 24"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label>Durasi Cek Aktifitas Sensor (Jam)</label>
+                <input
+                  type="number"
+                  id="noActivityCfg"
+                  min="1"
+                  max="24"
+                  step="1"
+                  placeholder="1 ~ 24"
                   required
                 />
               </div>
@@ -565,19 +615,6 @@
                 />
               </div>
 
-              <div class="form-group">
-                <label>Durasi Cek Sensor Kotor (Jam)</label>
-                <input
-                  type="number"
-                  id="dirtyCfg"
-                  min="1"
-                  max="24"
-                  step="1"
-                  placeholder="1 ~ 24"
-                  required
-                />
-              </div>
-
               <!-- BATTERY -->
               <div class="form-group full-width" style="margin-top: 6px">
                 <strong>Baterai & Daya</strong>
@@ -620,6 +657,94 @@
               </div>
             </div>
           </form>
+        </div>
+      </div>
+
+      <div class="card footer-card">
+        <div class="card-header">
+          <span>Informasi Footer</span>
+        </div>
+        <div class="footer-content">
+          <div>© 2026 Estrus Monitoring</div>
+          <label
+            >Firmware Version:
+            <span id="footerFwVersion">-</span>
+          </label>
+          <!-- <label
+            >Web Version:
+            <span id="footerWebVersion">-</span>
+          </label> -->
+          <div class="footer-actions">
+            <button class="btn btn-outline" id="openUpdateModal" type="button">
+              Update
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="updateModal" hidden>
+        <div class="modal-card">
+          <div class="modal-header">
+            <h2>Update Firmware</h2>
+            <button class="modal-close" type="button" aria-label="Tutup">
+              ×
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="modal-info-grid">
+              <label
+                >Firmware Version:
+                <span id="modalFwVersion">-</span>
+              </label>
+              <!-- <label
+                >Web Version:
+                <span id="modalWebVersion">-</span>
+              </label> -->
+            </div>
+
+            <div class="form-group full-width" style="margin-top: 12px">
+              <h4>Manifest OTA (WAJIB)</h4>
+              <label>Pilih manifest.json</label>
+              <input type="file" accept=".json" id="manifestFile" />
+            </div>
+
+            <div class="form-group full-width" style="margin-top: 12px">
+              <h4>Firmware OTA</h4>
+              <label>Pilih firmware.bin</label>
+              <input type="file" accept=".bin" id="firmwareFile" />
+            </div>
+            <button
+              class="btn btn-primary full-width"
+              type="button"
+              id="btnFirmwareUpload"
+              onclick="uploadFirmware()"
+            >
+              Update Firmware
+            </button>
+
+            <!-- <div class="form-group full-width" style="margin-top: 12px">
+              <h4>Dashboard OTA</h4>
+              <label>Pilih www.zip</label>
+              <input type="file" accept=".zip" id="webFile" />
+            </div>
+            <button
+              class="btn btn-primary full-width"
+              type="button"
+              id="btnWebUpload"
+              onclick="uploadWeb()"
+            >
+              Update Dashboard
+            </button> -->
+
+            <div class="modal-status full-width">
+              <div>
+                <strong>Progress: </strong><span id="updateProgress">-</span>
+              </div>
+              <div>
+                <strong>Status: </strong><span id="updateStatus">-</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -673,8 +798,8 @@
       window.API_BASE = window.location.origin;
     </script>
     <script src="app.js"></script>
+    <!-- // Sync alarm button classes between mobile center and desktop header -->
     <script>
-      // Sync alarm button classes between mobile center and desktop header
       (function () {
         function safeGet(id) {
           return document.getElementById(id);
@@ -730,6 +855,30 @@
         });
         a2.addEventListener("click", () => {
           if (typeof stopAlarm === "function") stopAlarm();
+        });
+      })();
+    </script>
+    <!-- Update Modal Script -->
+    <script>
+      (function () {
+        const openBtn = document.getElementById("openUpdateModal");
+        const modal = document.getElementById("updateModal");
+        const closeBtn = modal?.querySelector(".modal-close");
+
+        if (!openBtn || !modal || !closeBtn) return;
+
+        const closeModal = () => {
+          modal.hidden = true;
+        };
+
+        const openModal = () => {
+          modal.hidden = false;
+        };
+
+        openBtn.addEventListener("click", openModal);
+        closeBtn.addEventListener("click", closeModal);
+        modal.addEventListener("click", (event) => {
+          if (event.target === modal) closeModal();
         });
       })();
     </script>
