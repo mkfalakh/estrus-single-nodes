@@ -12,6 +12,8 @@ const el = {
   nodeTitle: document.getElementById("nodeTitle"),
   animalIdLabel: document.getElementById("animalIdLabel"),
   rtcTimeHeader: document.getElementById("rtcTimeHeader"),
+  ledBrightness: document.getElementById("ledBrightness"),
+  ledBrightnessValue: document.getElementById("ledBrightnessValue"),
 
   // estrus
   partitionHours: document.getElementById("partitionHours"),
@@ -22,12 +24,13 @@ const el = {
   baselineSamples: document.getElementById("baselineSamples"),
   baselineValid: document.getElementById("baselineValid"),
   estrusStatus: document.getElementById("estrusStatus"),
+  cowCondition: document.getElementById("cowCondition"),
 
   // sensors
   sensor1: document.getElementById("sensor1"),
   sensor2: document.getElementById("sensor2"),
-  sensor1Dirty: document.getElementById("sensor1Dirty"),
-  sensor2Dirty: document.getElementById("sensor2Dirty"),
+  sensor1Condition: document.getElementById("sensor1Condition"),
+  sensor2Condition: document.getElementById("sensor2Condition"),
 
   // rtc modules
   rtcTime: document.getElementById("rtcTime"),
@@ -62,6 +65,20 @@ const el = {
   configForm: document.getElementById("configForm"),
   historyBody: document.getElementById("historyBody"),
   historyPage: document.getElementById("historyPage"),
+  numberPage: document.getElementById("numberPage"),
+  btnPrev: document.getElementById("btnPrev"),
+  btnNext: document.getElementById("btnNext"),
+  historyDate: document.getElementById("historyDate"),
+
+  // update modal OTA
+  footerFwVersion: document.getElementById("footerFwVersion"),
+  footerWebVersion: document.getElementById("footerWebVersion"),
+  modalFwVersion: document.getElementById("modalFwVersion"),
+  modalWebVersion: document.getElementById("modalWebVersion"),
+  firmwareFile: document.getElementById("firmwareFile"),
+  webFile: document.getElementById("webFile"),
+  updateProgress: document.getElementById("updateProgress"),
+  updateStatus: document.getElementById("updateStatus"),
 };
 
 // API helpers
@@ -144,6 +161,202 @@ function showToast(msg, type = "info") {
 //     showToast("Logout gagal", "error");
 //   }
 // }
+
+// LOAD VERSIONS
+async function loadVersion() {
+  try {
+    const res = await apiJson("/api/version");
+
+    el.footerFwVersion.textContent = res.firmware_version || "-";
+    // el.footerWebVersion.textContent = res.web_version || "-";
+    el.modalFwVersion.textContent = res.firmware_version || "-";
+    // el.modalWebVersion.textContent = res.web_version || "-";
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// UPLOAD FIRMWARE
+async function uploadFirmware() {
+  const firmwareFile = document.getElementById("firmwareFile").files[0];
+
+  const manifestFile = document.getElementById("manifestFile").files[0];
+
+  if (!firmwareFile) {
+    showToast("Pilih firmware.bin", "error");
+
+    return;
+  }
+
+  if (!manifestFile) {
+    showToast("Pilih manifest.json", "error");
+
+    return;
+  }
+
+  try {
+    const manifest = await readManifest(manifestFile);
+
+    const check = await apiJson("/api/update/check", {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify({
+        firmware_version: manifest.firmware_version,
+
+        // web_version: manifest.web_version,
+      }),
+    });
+
+    if (check && check.firmware_same) {
+      showToast("Versi firmware sama, gagal update", "warning");
+
+      return;
+    }
+    if (!check.firmware_newer) {
+      showToast("Versi firmware lebih lama, gagal update", "error");
+
+      return;
+    }
+
+    showToast("Memeriksa Firmware...", "info");
+
+    const fd = new FormData();
+
+    fd.append("firmware", firmwareFile);
+
+    window.otaUploading = true;
+
+    const res = await fetch("/api/update/firmware", {
+      method: "POST",
+      body: fd,
+    });
+
+    if (!res.ok) {
+      throw new Error("Upload failed");
+    }
+
+    el.updateProgress.textContent = "100%";
+
+    el.updateStatus.textContent = "Success";
+
+    showToast(
+      "Firmware berhasil diupload. Restart dalam 3 detik...",
+      "success",
+    );
+  } catch (err) {
+    console.error(err);
+
+    showToast("Firmware upload failed", "error");
+  } finally {
+    setTimeout(() => {
+      window.otaUploading = false;
+      location.reload();
+    }, 10000);
+  }
+}
+
+// async function uploadFirmware() {
+//   const file = document.getElementById("firmwareFile").files[0];
+
+//   if (!file) {
+//     showToast("Pilih firmware.bin", "error");
+
+//     return;
+//   }
+
+//   const fd = new FormData();
+//   fd.append("firmware", file);
+
+//   window.otaUploading = true;
+
+//   try {
+//     const res = await fetch("/api/update/firmware", {
+//       method: "POST",
+//       body: fd,
+//     });
+
+//     if (!res.ok) {
+//       throw new Error("Upload failed");
+//     }
+//     el.updateProgress.textContent = "100%";
+//     el.updateStatus.textContent = "Success";
+
+//     showToast(
+//       "Firmware berhasil diupload. Restart dalam 3 detik...",
+//       "success",
+//     );
+//   } catch (err) {
+//     console.error(err);
+
+//     showToast("Firmware upload failed", "error");
+//   } finally {
+//     setTimeout(() => {
+//       window.otaUploading = false;
+//       location.reload();
+//     }, 10000);
+//   }
+// }
+
+// UPLOAD WEB DASHBOARD
+
+async function uploadWeb() {
+  const file = document.getElementById("webFile").files[0];
+
+  if (!file) {
+    showToast("Pilih www.zip", "error");
+
+    return;
+  }
+
+  const fd = new FormData();
+
+  fd.append("web", file);
+
+  try {
+    const res = await fetch("/api/update/web", {
+      method: "POST",
+      body: fd,
+    });
+
+    if (!res.ok) {
+      throw new Error("Upload failed");
+    }
+
+    showToast("Dashboard berhasil diupload", "success");
+  } catch (err) {
+    console.error(err);
+
+    showToast("Upload dashboard failed", "error");
+  }
+}
+
+// UPDATE STATUS UPLOAD PROGRESS
+async function updateStatusLoop() {
+  if (window.otaUploading) {
+    return;
+  }
+
+  try {
+    const res = await apiJson("/api/update/status");
+
+    el.updateProgress.textContent = `${res.progress || 0}%`;
+
+    el.updateStatus.textContent = res.status || "-";
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// CEK VERSION OTA FILES DENGAN MANIFEST.JSON
+async function readManifest(file) {
+  const text = await file.text();
+
+  return JSON.parse(text);
+}
 
 // sync RTC Button Handler
 async function syncRTC() {
@@ -307,6 +520,8 @@ async function startDashboard() {
   console.log("Dashboard started");
 
   try {
+    // load data awal
+    await loadVersion();
     await loadLatest();
     await loadEstrus();
     await loadConfig();
@@ -323,6 +538,7 @@ async function startDashboard() {
     dashboardBusy = true;
 
     try {
+      // load data terbaru setiap 10 detik
       console.log("Dashboard polling");
 
       await loadLatest();
@@ -359,14 +575,30 @@ function renderLatest(data) {
   // sensors
   if (el.sensor1) el.sensor1.innerText = data.sensor1 ? "AKTIF" : "OFF";
   if (el.sensor2) el.sensor2.innerText = data.sensor2 ? "AKTIF" : "OFF";
-  const s1dirty = data.sensor1_dirty;
-  if (el.sensor1Dirty) el.sensor1Dirty.innerText = s1dirty ? "KOTOR" : "NORMAL";
-  const s2dirty = data.sensor2_dirty;
-  if (el.sensor2Dirty) el.sensor2Dirty.innerText = s2dirty ? "KOTOR" : "NORMAL";
+
+  if (el.sensor1Condition) {
+    const s1Dirty = data.sensor1_dirty;
+    const s1NoActivity = data.sensor1_no_activity;
+    el.sensor1Condition.innerText = s1Dirty ? "KOTOR" : "NORMAL";
+    el.sensor1Condition.innerText = s1NoActivity ? "⚠️ NO ACTIVITY" : "NORMAL";
+  }
+
+  if (el.sensor2Condition) {
+    const s2Dirty = data.sensor2_dirty;
+    const s2NoActivity = data.sensor2_no_activity;
+    el.sensor2Condition.innerText = s2Dirty ? "KOTOR" : "NORMAL";
+    el.sensor2Condition.innerText = s2NoActivity ? "⚠️ NO ACTIVITY" : "NORMAL";
+  }
+
+  if (el.cowCondition) {
+    const isStanding = data.sensor1 || data.sensor2;
+    el.cowCondition.innerText = isStanding ? "BERDIRI" : "REBAH";
+    el.cowCondition.className = isStanding ? "sapi-berdiri" : "sapi-rebah";
+  }
 
   // battery
   if (el.batteryPercent)
-    el.batteryPercent.innerText = `${Number(data.battery_percent || 0)} %`;
+    el.batteryPercent.innerText = `${Number(data.battery_percent || 0).toFixed(0)} %`;
   if (el.batteryDays)
     el.batteryDays.innerText = `${Number(data.battery_days || 0)} Hari`;
   if (el.batteryVoltage)
@@ -467,6 +699,9 @@ function fillConfigForm(cfg) {
   setValue("apPassword", cfg.ap_password);
   setValue("proxLow", cfg.prox_low ? 1 : 0);
   setValue("alarmEnabled", cfg.alarm_enabled ? 1 : 0);
+  if (el.ledBrightness) el.ledBrightness.value = cfg.led_brightness;
+  if (el.ledBrightnessValue)
+    el.ledBrightnessValue.textContent = cfg.led_brightness;
 
   setValue("recordCfg", cfg.record_interval_sec);
   setValue("retentionCfg", cfg.retention_days);
@@ -475,6 +710,7 @@ function fillConfigForm(cfg) {
   setValue("stopAfterAlarm", cfg.stop_after_alarm ? 1 : 0);
   setValue("baselineCfg", cfg.min_baseline_samples);
   setValue("dirtyCfg", cfg.dirty_timeout_hours);
+  setValue("noActivityCfg", cfg.no_activity_timeout_hours);
 
   setValue("currentThreshold", cfg.current_threshold);
   setValue("powerThreshold", cfg.power_threshold);
@@ -568,12 +804,14 @@ function validateConfig() {
   if (!validateAnimalId()) valid = false;
   if (!validatePasswordAP()) valid = false;
 
+  if (!validateRange(el.ledBrightness.value, 1, 255)) valid = false;
   if (!validateRange("recordCfg", 10, 3600)) valid = false;
   if (!validateRange("retentionCfg", 1, 14)) valid = false;
   if (!validateRange("partitionCfg", 1, 24)) valid = false;
   if (!validateRange("estrusCfg", 0.1, 100)) valid = false;
   if (!validateRange("baselineCfg", 10, 1000)) valid = false;
   if (!validateRange("dirtyCfg", 1, 24)) valid = false;
+  if (!validateRange("noActivityCfg", 1, 24)) valid = false;
   if (!validateRange("currentThreshold", 100, 150)) valid = false;
   if (!validateRange("powerThreshold", 400, 600)) valid = false;
 
@@ -602,28 +840,27 @@ async function saveConfig() {
       node_id: nodeId,
       animal_id: animalId,
       ap_password: document.getElementById("apPassword")?.value || "estrus123",
-
       prox_active_low: Number(document.getElementById("proxLow")?.value || 0),
-
       alarm_enabled: Number(
         document.getElementById("alarmEnabled")?.value || 0,
       ),
+      led_brightness: Number(el.ledBrightness.value),
 
       // ESTRUS
       record_interval_sec: Number(
-        document.getElementById("recordCfg")?.value || 10,
+        document.getElementById("recordCfg")?.value || 0,
       ),
 
       retention_days: Number(
-        document.getElementById("retentionCfg")?.value || 7,
+        document.getElementById("retentionCfg")?.value || 0,
       ),
 
       partition_hours: Number(
-        document.getElementById("partitionCfg")?.value || 3,
+        document.getElementById("partitionCfg")?.value || 0,
       ),
 
       estrus_threshold_pct: Number(
-        document.getElementById("estrusCfg")?.value || 6,
+        document.getElementById("estrusCfg")?.value || 0,
       ),
 
       stop_after_alarm: Number(
@@ -631,20 +868,24 @@ async function saveConfig() {
       ),
 
       min_baseline_samples: Number(
-        document.getElementById("baselineCfg")?.value || 10,
+        document.getElementById("baselineCfg")?.value || 0,
       ),
 
       dirty_timeout_hours: Number(
-        document.getElementById("dirtyCfg")?.value || 2,
+        document.getElementById("dirtyCfg")?.value || 0,
+      ),
+
+      no_activity_timeout_hours: Number(
+        document.getElementById("noActivityCfg")?.value || 0,
       ),
 
       // BATTERY
       current_threshold: Number(
-        document.getElementById("currentThreshold")?.value || 120,
+        document.getElementById("currentThreshold")?.value || 0,
       ),
 
       power_threshold: Number(
-        document.getElementById("powerThreshold")?.value || 500,
+        document.getElementById("powerThreshold")?.value || 0,
       ),
     };
 
@@ -730,15 +971,24 @@ async function loadHistory(date, page = 0, limit = 10) {
 
     if (!data || !data.rows || data.rows.length === 0) {
       showToast("Tidak ada data untuk tanggal tersebut", "info");
-      document.getElementById("historyBody").innerHTML = "";
-      el.historyPage && (el.historyPage.innerText = data.page || 0);
+      el.historyBody.innerHTML = "";
+      el.historyPage.hidden = true;
+      el.numberPage.innerText = "-";
+      el.btnPrev.hidden = true;
+      el.btnPrev.disabled = true;
+      el.btnNext.hidden = true;
+      el.btnNext.disabled = true;
       hasNextPage = !!data.has_next;
       return;
     }
+
     renderHistory(data.rows || []);
     currentPage = Number(data.page ?? page);
     hasNextPage = !!data.has_next;
-    el.historyPage && (el.historyPage.innerText = currentPage + 1);
+    el.historyPage.hidden = false;
+    el.numberPage.innerText = currentPage + 1;
+    el.btnPrev.hidden = currentPage === 0;
+    el.btnNext.hidden = !hasNextPage;
   } catch (e) {
     console.error(e);
     showToast("Gagal memuat history", "error");
@@ -778,9 +1028,9 @@ function renderHistory(rows) {
       <td>${r.sensor1_dirty ?? 0}</td>
       <td>${r.sensor2_dirty ?? 0}</td>
       <td>${Number(r.deviation ?? 0).toFixed(1)}</td>
-      <td>${r.estrus ? "YA" : "TIDAK"}</td>
-      <td>${Number(r.voltage ?? 0).toFixed(1)}</td>
-      <td>${Number(r.current ?? 0).toFixed(1)}</td>
+      <td>${r.estrus ? "Ya" : "Tidak"}</td>
+      <td>${Number(r.voltage ?? 0).toFixed(2)}</td>
+      <td>${Number(r.current ?? 0).toFixed(2)}</td>
       <td>${Number(r.battery_pct ?? 0).toFixed(0)}%</td>
     `;
 
@@ -798,6 +1048,16 @@ function downloadCSV(date) {
 }
 
 // Helpers
+function bindEvents() {
+  if (el.ledBrightness && el.ledBrightnessValue) {
+    el.ledBrightness.addEventListener("input", () => {
+      el.ledBrightnessValue.textContent = el.ledBrightness.value;
+    });
+  }
+
+  // event lain nanti di sini...
+}
+
 function updateBadge(element, ok) {
   if (!element) return;
   element.className = ok ? "dot dot-active" : "dot dot-error";
@@ -816,5 +1076,8 @@ document
 // Start
 document.addEventListener("DOMContentLoaded", () => {
   // checkAuth();
+  // panggil event dulu
+  bindEvents();
+  // lalu start dashboard
   startDashboard();
 });
