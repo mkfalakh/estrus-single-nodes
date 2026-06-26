@@ -17,3 +17,7 @@ extern PowerStats powerStats;
 
 void updatePowerStats(float power_mW, float voltage, float dt_seconds);
 void updateBatteryPredictionDate();
+float voltageToPercent(float v);
+float readBatteryVoltageADC();
+void initPowerMonitor();
+void batteryTask(void *pv);
