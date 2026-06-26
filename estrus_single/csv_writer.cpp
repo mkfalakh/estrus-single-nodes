@@ -87,7 +87,7 @@ static bool flushCsvBuffer(SensorData *buffer, int &count) {
       SensorData &d = buffer[i];
 
       f.printf(
-        "%s,%s,%s,%d,%d,%d,%d,%.2f,%d,%.2f,%.2f,%.2f\n",
+        "%s,%s,%s,%d,%d,%d,%d,%.2f,%d,%.2f,%.2f,%.0f\n",
 
         sysConfig.node_id,
         sysConfig.animal_id,
