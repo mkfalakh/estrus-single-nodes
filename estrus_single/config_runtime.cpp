@@ -254,23 +254,23 @@ void loadConfig() {
     // Debug
     Serial.println("⚙️ Default Config Loaded!");
 
-    Serial.println(String("node id: ") + sysConfig.node_id);
-    Serial.println(String("animal id: ") + sysConfig.animal_id);
-    Serial.println(String("AP password: ") + sysConfig.ap_password);
-    Serial.println(String("prox mode: ") + sysConfig.prox_active_low);
-    Serial.println(String("alarm enable ? ") + sysConfig.alarm_enabled);
+    // Serial.println(String("node id: ") + sysConfig.node_id);
+    // Serial.println(String("animal id: ") + sysConfig.animal_id);
+    // Serial.println(String("AP password: ") + sysConfig.ap_password);
+    // Serial.println(String("prox mode: ") + sysConfig.prox_active_low);
+    // Serial.println(String("alarm enable ? ") + sysConfig.alarm_enabled);
 
-    Serial.println(String("rec interval sec: ") + sysConfig.record_interval_sec);
-    Serial.println(String("retention days: ") + sysConfig.retention_days);
-    Serial.println(String("partition hours: ") + sysConfig.partition_hours);
-    Serial.println(String("estrus threshold: ") + sysConfig.estrus_threshold_pct);
-    Serial.println(String("stop after alarm ? ") + sysConfig.stop_after_alarm);
-    Serial.println(String("baseline windows: ") + sysConfig.min_baseline_windows);
-    Serial.println(String("dirty timeout min: ") + sysConfig.dirty_timeout_min);
+    // Serial.println(String("rec interval sec: ") + sysConfig.record_interval_sec);
+    // Serial.println(String("retention days: ") + sysConfig.retention_days);
+    // Serial.println(String("partition hours: ") + sysConfig.partition_hours);
+    // Serial.println(String("estrus threshold: ") + sysConfig.estrus_threshold_pct);
+    // Serial.println(String("stop after alarm ? ") + sysConfig.stop_after_alarm);
+    // Serial.println(String("baseline windows: ") + sysConfig.min_baseline_windows);
+    // Serial.println(String("dirty timeout min: ") + sysConfig.dirty_timeout_min);
 
-    Serial.println(String("current threshold: ") + sysConfig.current_threshold);
-    Serial.println(String("power threshold: ") + sysConfig.power_threshold);
-    Serial.println(String("energy: ") + powerStats.energy_mWh);
+    // Serial.println(String("current threshold: ") + sysConfig.current_threshold);
+    // Serial.println(String("power threshold: ") + sysConfig.power_threshold);
+    // Serial.println(String("energy: ") + powerStats.energy_mWh);
   }
 }
 

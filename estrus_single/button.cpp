@@ -42,8 +42,7 @@ static void handleButtonEvent(ButtonEvent event) {
             "🔕 Alarm stopped by button");
         }
 
-        buzzerPlay(
-          BUZZER_STOP_CONFIRM);
+        buzzerPlay(BUZZER_STOP_CONFIRM);
       }
 
       break;
