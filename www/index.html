@@ -191,6 +191,14 @@
           </div>
           <div class="card-content-grid">
             <div>
+              <div class="stat-unit">Tanggal Injeksi</div>
+              <div class="stat-value" id="injectionDate"></div>
+            </div>
+            <div>
+              <div class="stat-unit">Hari Siklus</div>
+              <div class="stat-value" id="cycleDay">-</div>
+            </div>
+            <div>
               <div class="stat-unit">Partisi</div>
               <div class="stat-value" id="partitionHours">-</div>
             </div>
@@ -207,15 +215,23 @@
               <div class="stat-value" id="deviationPct">-</div>
             </div>
             <div>
-              <div class="stat-unit">Ambang Birahi</div>
-              <div class="stat-value" id="estrusThreshold">-</div>
+              <div class="stat-unit">Baseline Window</div>
+              <div class="stat-value" id="baselineWindow">-</div>
             </div>
             <div>
-              <div class="stat-unit">Sampel Baseline</div>
-              <div class="stat-value" id="baselineSamples">-</div>
+              <div class="stat-unit">Window Count</div>
+              <div class="stat-value" id="windowCount">-</div>
             </div>
             <div>
-              <div class="stat-unit">Baseline Valid</div>
+              <div class="stat-unit">Window Size</div>
+              <div class="stat-value" id="windowSize">-</div>
+            </div>
+            <div>
+              <div class="stat-unit">Estrus Window</div>
+              <div class="stat-value" id="estrusWindow">-</div>
+            </div>
+            <div>
+              <div class="stat-unit">Valid</div>
               <div class="stat-value" id="baselineValid">-</div>
             </div>
             <div>
@@ -512,14 +528,14 @@
               </div>
 
               <div class="form-group">
-                <label>Durasi Cek Sensor Kotor (Jam)</label>
+                <label>Durasi Cek Sensor Kotor (Menit)</label>
                 <input
                   type="number"
                   id="dirtyCfg"
-                  min="1"
-                  max="24"
+                  min="10"
+                  max="480"
                   step="1"
-                  placeholder="1 ~ 24"
+                  placeholder="10 ~ 480"
                   required
                 />
               </div>
@@ -564,16 +580,20 @@
               </div>
 
               <div class="form-group">
-                <label>Partisi (jam)</label>
-                <input
-                  type="number"
-                  id="partitionCfg"
-                  min="1"
-                  max="24"
-                  step="1"
-                  placeholder="1 ~ 24"
-                  required
-                />
+                <label>Tanggal Injeksi</label>
+                <input id="injectionDateCfg" type="date" />
+              </div>
+
+              <div class="form-group">
+                <label>Partisi</label>
+                <select id="partitionCfg" required>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="6">6</option>
+                  <option value="8">8</option>
+                  <option value="12">12</option>
+                  <option value="24">24</option>
+                </select>
               </div>
 
               <div class="form-group">
@@ -603,14 +623,14 @@
               </div>
 
               <div class="form-group">
-                <label>Min. Sampel Baseline</label>
+                <label>Baseline Window</label>
                 <input
                   type="number"
                   id="baselineCfg"
-                  min="10"
-                  max="1000"
+                  min="2"
+                  max="48"
                   step="1"
-                  placeholder="10 ~ 1000"
+                  placeholder="2 ~ 48"
                   required
                 />
               </div>
