@@ -37,3 +37,5 @@ uint16_t getSlidingWindowSize();
 // Prefill the sliding window from the last N clean CSV records at boot.
 // Call once in setup() after triggerBaselineRecompute(), before startTasks().
 void prefillSlidingWindow();
+
+uint8_t getPartitionIndex();

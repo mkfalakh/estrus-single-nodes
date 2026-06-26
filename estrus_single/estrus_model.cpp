@@ -39,7 +39,7 @@ static uint16_t windowSize()
   return (uint16_t)sz;
 }
 
-static uint8_t getPartitionIndex()
+uint8_t getPartitionIndex()
 {
   if (sysConfig.partition_hours == 0) return 0;
   return getNow().hour() / sysConfig.partition_hours;
@@ -267,6 +267,8 @@ EstrusResult evaluateEstrus()
 
   r.current_rate = on_frac * 100.0f;
 
+  SYS.current_rate = r.current_rate;
+
   // --------------------------------------------------
   // 2. Quality gate
   // --------------------------------------------------
@@ -286,6 +288,9 @@ EstrusResult evaluateEstrus()
 
   r.baseline_rate    = medianRate * 100.0f;
   r.baseline_windows = nWindows;
+
+  SYS.baseline_rate = r.baseline_rate;
+  SYS.baseline_windows = r.baseline_windows;
 
   if (nWindows < sysConfig.min_baseline_windows) {
     r.valid = false;
