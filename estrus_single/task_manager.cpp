@@ -1,3 +1,4 @@
+#include "soc/soc.h"
 #include "task_manager.h"
 #include "task_monitor.h"
 #include "led_control.h"
@@ -10,6 +11,7 @@
 #include "storage_cleanup.h"
 #include "web_server.h"
 #include "health_monitor.h"
+#include "power_monitor.h"
 
 TaskHandle_t sensorTaskHandle = NULL;
 TaskHandle_t csvTaskHandle = NULL;
@@ -21,6 +23,7 @@ TaskHandle_t wifiTaskHandle = NULL;
 TaskHandle_t webServerTaskHandle = NULL;
 TaskHandle_t cleanupStorageTaskHandle = NULL;
 TaskHandle_t healthMonitorTaskHandle = NULL;
+TaskHandle_t batteryTaskHandle = NULL;
 
 TaskHandle_t watchdogTaskHandle = NULL;
 
@@ -63,6 +66,18 @@ void startTasks() {
     NULL,
     1,
     &csvTaskHandle,
+    1);
+
+  // =====================================
+  // BATTERY TASK
+  // =====================================
+  xTaskCreatePinnedToCore(
+    batteryTask,
+    "Battery",
+    4096,
+    NULL,
+    1,
+    &batteryTaskHandle,
     1);
 
   // =====================================
