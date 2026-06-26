@@ -29,7 +29,7 @@ static bool lastSensor2 = false;
 // ========================
 void updateDirtyDetection(bool s1, bool s2) {
 
-  uint32_t timeoutDirtySec = sysConfig.dirty_timeout_hours * 3600UL;
+  uint32_t timeoutDirtySec = sysConfig.dirty_timeout_min * 60UL;
   uint32_t timeoutActivitySec = sysConfig.no_activity_timeout_hours * 3600UL;
 
   // SENSOR 1
@@ -44,20 +44,11 @@ void updateDirtyDetection(bool s1, bool s2) {
 
   } else {
 
-    sensor1StableCount = 0;
+    sensor1ActiveSince = 0;
+    SYS.sensor1_dirty = false;
 
-    sensor1Dirty = false;
-
-    lastSensor1 = s1;
-  }
-
-  uint16_t dirtySamples = (sysConfig.record_interval_sec > 0)
-    ? (uint16_t)(((uint32_t)sysConfig.dirty_timeout_min * 60UL) / sysConfig.record_interval_sec)
-    : UINT16_MAX;
-  if (dirtySamples < 1) dirtySamples = 1;
-
-  if (sensor1StableCount >= dirtySamples) {
-    sensor1Dirty = true;
+    sensor1InactiveSince += sysConfig.record_interval_sec;
+    SYS.sensor1_no_activity = (sensor1InactiveSince >= timeoutActivitySec);
   }
 
   // SENSOR 2
@@ -72,16 +63,25 @@ void updateDirtyDetection(bool s1, bool s2) {
 
   } else {
 
-    sensor2StableCount = 0;
+    sensor2ActiveSince = 0;
+    SYS.sensor2_dirty = false;
 
-    sensor2Dirty = false;
-
-    lastSensor2 = s2;
+    sensor2InactiveSince += sysConfig.record_interval_sec;
+    SYS.sensor2_no_activity = (sensor2InactiveSince >= timeoutActivitySec);
   }
 
-  if (sensor2StableCount >= dirtySamples) {
-    sensor2Dirty = true;
-  }
+  logToFile(
+    "DIRTY S1=%lu/%lu S2=%lu/%lu | NO ACTIVITY S1=%lu/%lu S2=%lu/%lu",
+
+    sensor1ActiveSince,
+    timeoutDirtySec,
+    sensor2ActiveSince,
+    timeoutDirtySec,
+
+    sensor1InactiveSince,
+    timeoutActivitySec,
+    sensor2InactiveSince,
+    timeoutActivitySec);
 }
 
 // RESET DIRTY DETECTION
@@ -220,9 +220,6 @@ void sensorTask(void *pv) {
 
         lastD2 = d2;
       }
-
-      // set sensor dirty
-      sysSetSensorDirty(d1 || d2);
 
       // ==========================
       // SENSOR NO ACTIVITY EVENT

@@ -344,18 +344,6 @@ void handleHistory() {
     return;
   }
 
-  // if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
-
-  //   server.send(
-  //     503,
-  //     "application/json",
-  //     "{\"error\":\"sd_busy\"}");
-
-    logResponse(503, "sd_busy");
-
-    return;
-  }
-
   int page = 0;
   int limit = DEFAULT_LIMIT;
 
@@ -373,6 +361,18 @@ void handleHistory() {
       "{\"date\":\"" + date + "\",\"rows\":[],\"has_next\":false}");
 
     logResponse(200, "file not found, empty rows");
+
+    return;
+  }
+
+  if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
+
+    server.send(
+      503,
+      "application/json",
+      "{\"error\":\"sd_busy\"}");
+
+    logResponse(503, "sd_busy");
 
     return;
   }
@@ -460,10 +460,10 @@ void handleHistory() {
   //     "application/json",
   //     "{\"error\":\"oom\"}");
 
-    logResponse(500, "oom");
+  //   logResponse(500, "oom");
 
-    return;
-  }
+  //   return;
+  // }
 
   bool hasNext = false;
 
@@ -631,11 +631,11 @@ void handleAlarmStart() {
 // Returns true if columns 0 (device_id) and 1 (animal_id) match sysConfig.
 // Uses byte-by-byte compare — ROM strncmp uses L32I word loads and crashes
 // with LoadStoreAlignment when the pointer is not 4-byte aligned.
-static bool matchesDeviceFilter(const char *line) {
+static bool matchesDeviceFilter(const char* line) {
   int nlen = strlen(sysConfig.node_id);
   int alen = strlen(sysConfig.animal_id);
 
-  const char *p = line;
+  const char* p = line;
 
   // field 0: device_id
   if (nlen > 0) {
@@ -710,7 +710,7 @@ void handleDownload() {
   // then release mutex and do HTTP I/O without holding it.
   static const int SEND_BUF_LINES = 32;
   char sendBuf[SEND_BUF_LINES][160];
-  int  sendCount = 0;
+  int sendCount = 0;
 
   char lineBuf[160];
   char prevLine[160];
@@ -729,7 +729,7 @@ void handleDownload() {
     String filename = "/data/" + String(dateStr) + ".csv";
 
     bool fileDone = false;
-    long filePos  = 0;
+    long filePos = 0;
 
     // Read file in chunks: take mutex → read batch → give mutex → send batch
     while (!fileDone) {
@@ -745,7 +745,7 @@ void handleDownload() {
       sysSetSD(true);
 
       if (filePos == 0) {
-        prevLine[0]   = '\0';
+        prevLine[0] = '\0';
         prevMinKey[0] = '\0';
       }
       file.seek(filePos);
@@ -761,7 +761,10 @@ void handleDownload() {
 
         if (len > 0 && lineBuf[len - 1] == '\r') lineBuf[--len] = '\0';
 
-        if (firstLine) { firstLine = false; continue; }  // skip CSV header row
+        if (firstLine) {
+          firstLine = false;
+          continue;
+        }  // skip CSV header row
         if (len == 0) continue;
 
         if (!matchesDeviceFilter(lineBuf)) continue;
@@ -781,7 +784,7 @@ void handleDownload() {
       }
 
       fileDone = !file.available();
-      filePos  = file.position();
+      filePos = file.position();
 
       // flush final record on last chunk
       if (fileDone && prevLine[0] != '\0' && sendCount < SEND_BUF_LINES) {
@@ -1362,7 +1365,7 @@ void handleSetConfig() {
   bool retentionChanged = temp.retention_days != sysConfig.retention_days;
   bool stopAlarmChanged = temp.stop_after_alarm != sysConfig.stop_after_alarm;
   bool baselineWindowChanged = temp.min_baseline_windows != sysConfig.min_baseline_windows;
-  bool dirtyMinChanged       = temp.dirty_timeout_min   != sysConfig.dirty_timeout_min;
+  bool dirtyMinChanged = temp.dirty_timeout_min != sysConfig.dirty_timeout_min;
 
   bool currentChanged = temp.current_threshold != sysConfig.current_threshold;
   bool powerChanged = temp.power_threshold != sysConfig.power_threshold;
@@ -1614,17 +1617,17 @@ void handleLatest() {
     return String(v, 2);
   };
 
-  json += "\"voltage\":"         + safeFloat(SYS.voltage)      + ",";
-  json += "\"current\":"         + safeFloat(SYS.current)      + ",";
-  json += "\"power\":"           + safeFloat(SYS.power)        + ",";
+  json += "\"voltage\":" + safeFloat(SYS.battery_voltage) + ",";
+  json += "\"current\":" + safeFloat(SYS.current) + ",";
+  json += "\"power\":" + safeFloat(SYS.power) + ",";
 
   // ========================
   // BATTERY
   // ========================
-  json += "\"battery_percent\":" + safeFloat(SYS.battery_pct)  + ",";
+  json += "\"battery_percent\":" + safeFloat(SYS.battery_pct) + ",";
 
   float _bdays = powerStats.estimated_days_left;
-  json += "\"battery_days\":"    + (isnan(_bdays) || isinf(_bdays) ? String("0.0") : String(_bdays, 1)) + ",";
+  json += "\"battery_days\":" + (isnan(_bdays) || isinf(_bdays) ? String("0.0") : String(_bdays, 1)) + ",";
   json += "\"battery_date\":\"" + String(powerStats.estimated_date) + "\",";
 
   // ========================
@@ -1665,11 +1668,14 @@ void handleEstrus() {
 
     // parse YYYY-MM-DD
     char buf[5];
-    strncpy(buf, sysConfig.injection_date, 4); buf[4] = '\0';
+    strncpy(buf, sysConfig.injection_date, 4);
+    buf[4] = '\0';
     int sy = atoi(buf);
-    strncpy(buf, sysConfig.injection_date + 5, 2); buf[2] = '\0';
+    strncpy(buf, sysConfig.injection_date + 5, 2);
+    buf[2] = '\0';
     int sm = atoi(buf);
-    strncpy(buf, sysConfig.injection_date + 8, 2); buf[2] = '\0';
+    strncpy(buf, sysConfig.injection_date + 8, 2);
+    buf[2] = '\0';
     int sd = atoi(buf);
 
     DateTime startDt(sy, sm, sd, 0, 0, 0);
@@ -1868,12 +1874,12 @@ void handleStorage() {
 
 //   json += "}";
 
-  server.send(
-    200,
-    "application/json",
-    json);
-  logResponse(200);
-}
+// server.send(
+//   200,
+//   "application/json",
+//   json);
+// logResponse(200);
+// }
 
 void handleDevice() {
 
