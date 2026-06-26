@@ -21,12 +21,12 @@ SystemState SYS = {
   .sensor1_no_activity = false,
   .sensor2_no_activity = false,
 
-  .current_rate = 0,
-  .baseline_rate = 0,
-  .deviation_pct = 0,
-  .estrus = false,
-  .partition = 0,
-  .baseline_samples = 0,
+  .current_rate     = 0,
+  .baseline_rate    = 0,
+  .deviation_pct    = 0,
+  .estrus           = false,
+  .partition        = 0,
+  .baseline_windows = 0,
 
   .alarm_active = false,
   .fault_alarm_muted = false,
@@ -64,26 +64,12 @@ void sysSetSensor2Dirty(bool d2) {
   SYS.sensor2_dirty = d2;
 }
 
-void sysSetEstrusResult(
-  const EstrusResult &r) {
-
-  SYS.current_rate =
-    r.current_rate;
-
-  SYS.baseline_rate =
-    r.baseline_rate;
-
-  SYS.deviation_pct =
-    r.deviation_pct;
-
-  // SYS.partition =
-  //   r.partition;
-
-  SYS.baseline_samples =
-    r.baseline_samples;
-
-  SYS.estrus =
-    r.estrus;
+void sysSetEstrusResult(const EstrusResult &r) {
+  SYS.current_rate     = r.current_rate;
+  SYS.baseline_rate    = r.baseline_rate;
+  SYS.deviation_pct    = r.deviation_pct;
+  SYS.baseline_windows = r.baseline_windows;
+  SYS.estrus           = r.estrus;
 }
 
 void sysSetSensorState(bool s1, bool s2, bool d1, bool d2) {

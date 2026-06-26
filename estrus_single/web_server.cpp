@@ -24,6 +24,9 @@
 
 #define TZ_OFFSET (7 * 3600)  // timezone GMT+7 WIB
 
+static void logRequest();
+static void logResponse(int code, const char* note = nullptr);
+
 WebServer server(80);
 
 // update last client
@@ -251,18 +254,21 @@ void handleCheckAuth() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 void handleLogout() {
   logToFile("✅ Logout sukses");
   server.sendHeader("Set-Cookie", "ESPSESSIONID=deleted; Path=/; Max-Age=0");
   server.send(200, "application/json", "{\"success\":true}");
+  logResponse(200);
 }
 
 void handleLogin() {
 
   if (!server.hasArg("user") || !server.hasArg("pass")) {
-    server.send(400, "application/json", "{\"success\":false}");
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"missing user or pass\"}");
+    logResponse(400, "missing args");
     return;
   }
 
@@ -274,6 +280,7 @@ void handleLogin() {
     logToFile("❌ Login gagal (user salah): " + user);
     // vTaskDelay(pdMS_TO_TICKS(300));
     server.send(200, "application/json", "{\"success\":false}");
+    logResponse(200, "wrong user");
     return;
   }
 
@@ -284,6 +291,7 @@ void handleLogin() {
     logToFile("❌ Login gagal (password salah)");
     // vTaskDelay(pdMS_TO_TICKS(300));
     server.send(200, "application/json", "{\"success\":false}");
+    logResponse(200, "wrong pass");
     return;
   }
 
@@ -291,6 +299,7 @@ void handleLogin() {
   String sessionId;
   if (!createSession(sessionId)) {
     server.send(500, "application/json", "{\"error\":\"session penuh\"}");
+    logResponse(500, "session full");
     return;
   }
 
@@ -299,6 +308,7 @@ void handleLogin() {
   server.sendHeader("Set-Cookie", "ESPSESSIONID=" + sessionId + "; Path=/; SameSite=Lax; Max-Age=3600");
 
   server.send(200, "application/json", "{\"success\":true}");
+  logResponse(200, "ok");
 }
 
 
@@ -327,7 +337,9 @@ void handleHistory() {
     server.send(
       400,
       "application/json",
-      "{\"error\":\"invalid date\"}");
+      "{\"error\":\"invalid date\",\"field\":\"date\",\"reason\":\"must be YYYY-MM-DD\"}");
+
+    logResponse(400, "invalid date");
 
     return;
   }
@@ -339,15 +351,15 @@ void handleHistory() {
   //     "application/json",
   //     "{\"error\":\"sd_busy\"}");
 
-  //   return;
-  // }
+    logResponse(503, "sd_busy");
+
+    return;
+  }
 
   int page = 0;
   int limit = DEFAULT_LIMIT;
 
   String filename = "/data/" + date + ".csv";
-
-  // String filename = "/data/" + String(sysConfig.node_id) + "-" + date + ".csv";
 
   if (!SD.exists(filename)) {
 
@@ -360,15 +372,7 @@ void handleHistory() {
       "application/json",
       "{\"date\":\"" + date + "\",\"rows\":[],\"has_next\":false}");
 
-    return;
-  }
-
-  if (!takeSDMutex("HISTORY", pdMS_TO_TICKS(3000))) {
-
-    server.send(
-      503,
-      "application/json",
-      "{\"error\":\"sd_busy\"}");
+    logResponse(200, "file not found, empty rows");
 
     return;
   }
@@ -387,6 +391,8 @@ void handleHistory() {
       500,
       "application/json",
       "{\"error\":\"sd\"}");
+
+    logResponse(500, "sd open failed");
 
     return;
   }
@@ -454,8 +460,10 @@ void handleHistory() {
   //     "application/json",
   //     "{\"error\":\"oom\"}");
 
-  //   return;
-  // }
+    logResponse(500, "oom");
+
+    return;
+  }
 
   bool hasNext = false;
 
@@ -491,12 +499,12 @@ void handleHistory() {
 
   String json;
 
-  logToFile(
-    "HEAP before json=%u",
-    ESP.getFreeHeap());
-
-  // json.reserve(256 + (count * 180));
-  json.reserve(8192);
+  if (!json.reserve(256 + (count * 180))) {
+    free(lines);
+    server.send(500, "application/json", "{\"error\":\"oom_json\"}");
+    logResponse(500, "oom json reserve");
+    return;
+  }
 
   json = "{";
 
@@ -548,10 +556,8 @@ void handleHistory() {
 
   json += "}";
 
-  // if (lines) {
-  //   free(lines);
-  //   lines = nullptr;
-  // }
+
+  free(lines);
 
   server.sendHeader("Connection", "close");
 
@@ -560,12 +566,7 @@ void handleHistory() {
     json.length());
 
   server.send(200, "application/json", json);
-
-  logToFile(
-    "HEAP after json=%u",
-    ESP.getFreeHeap());
-
-  // free(lines);
+  logResponse(200);
 }
 
 // ===== HANDLE ALARM =====
@@ -588,6 +589,7 @@ void handleAlarmStatus() {
   json += "}";
 
   server.send(200, "application/json", json);
+  logResponse(200);
 }
 
 void handleAlarmStop() {
@@ -609,6 +611,7 @@ void handleAlarmStop() {
   logToFile("🔕 Alarm stopped via API");
 
   server.send(200, "application/json", "{\"success\":true}");
+  logResponse(200);
 }
 
 void handleAlarmStart() {
@@ -619,30 +622,42 @@ void handleAlarmStart() {
 
   logToFile("🔔 Alarm resume via API");
 
-  // String json = "{\"success\":true}";
-
   server.send(200, "application/json", "{\"success\":true}");
+  logResponse(200);
 }
 
 // ===== HANDLE DOWNLOAD BUTTON =====
 
 // Returns true if columns 0 (device_id) and 1 (animal_id) match sysConfig.
-static bool matchesDeviceFilter(const char* line) {
-  const char* p = line;
-  const char* d0 = p;
-  while (*p && *p != ',') p++;
-  int d0len = p - d0;
-  if (!*p) return false;
-  p++;
-  const char* d1 = p;
-  while (*p && *p != ',') p++;
-  int d1len = p - d1;
-
+// Uses byte-by-byte compare — ROM strncmp uses L32I word loads and crashes
+// with LoadStoreAlignment when the pointer is not 4-byte aligned.
+static bool matchesDeviceFilter(const char *line) {
   int nlen = strlen(sysConfig.node_id);
   int alen = strlen(sysConfig.animal_id);
 
-  if (nlen > 0 && (d0len != nlen || strncmp(d0, sysConfig.node_id, nlen) != 0)) return false;
-  if (alen > 0 && (d1len != alen || strncmp(d1, sysConfig.animal_id, alen) != 0)) return false;
+  const char *p = line;
+
+  // field 0: device_id
+  if (nlen > 0) {
+    for (int i = 0; i < nlen; i++, p++) {
+      if (*p != sysConfig.node_id[i]) return false;
+    }
+    if (*p != ',') return false;
+    p++;
+  } else {
+    while (*p && *p != ',') p++;
+    if (!*p) return false;
+    p++;
+  }
+
+  // field 1: animal_id
+  if (alen > 0) {
+    for (int i = 0; i < alen; i++, p++) {
+      if (*p != sysConfig.animal_id[i]) return false;
+    }
+    if (*p != ',' && *p != '\0') return false;
+  }
+
   return true;
 }
 
@@ -668,11 +683,13 @@ void handleDownload() {
 
   if (!SYS.rtc_ok) {
     server.send(503, "text/plain", "RTC not ready");
+    logResponse(503, "rtc not ready");
     return;
   }
 
   if (!SYS.sd_ok) {
     server.send(503, "text/plain", "SD not available");
+    logResponse(503, "sd not available");
     return;
   }
 
@@ -683,10 +700,17 @@ void handleDownload() {
   server.sendHeader("Content-Disposition", "attachment; filename=" + csvName);
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(200, "text/csv", "");
+  logResponse(200, "streaming csv");
 
   server.sendContent(
     "device_id,animal_id,timestamp,sensor1_state,sensor2_state,"
     "sensor1_dirty,sensor2_dirty,deviation,estrus,voltage,current,battery_pct\r\n");
+
+  // Send buffer: collect per-minute winners while holding SD mutex,
+  // then release mutex and do HTTP I/O without holding it.
+  static const int SEND_BUF_LINES = 32;
+  char sendBuf[SEND_BUF_LINES][160];
+  int  sendCount = 0;
 
   char lineBuf[160];
   char prevLine[160];
@@ -704,63 +728,81 @@ void handleDownload() {
 
     String filename = "/data/" + String(dateStr) + ".csv";
 
-    if (!takeSDMutex("DOWNLOAD", pdMS_TO_TICKS(3000))) continue;
+    bool fileDone = false;
+    long filePos  = 0;
 
-    File file = SD.open(filename);
+    // Read file in chunks: take mutex → read batch → give mutex → send batch
+    while (!fileDone) {
 
-    if (!file) {
-      sysSetSD(false);
-      giveSDMutex();
-      continue;
-    }
+      if (!takeSDMutex("DOWNLOAD", pdMS_TO_TICKS(3000))) break;
 
-    sysSetSD(true);
+      File file = SD.open(filename);
+      if (!file) {
+        sysSetSD(false);
+        giveSDMutex();
+        break;
+      }
+      sysSetSD(true);
 
-    bool firstLine = true;
-    prevLine[0] = '\0';
-    prevMinKey[0] = '\0';
+      if (filePos == 0) {
+        prevLine[0]   = '\0';
+        prevMinKey[0] = '\0';
+      }
+      file.seek(filePos);
 
-    while (file.available()) {
+      sendCount = 0;
+      bool firstLine = (filePos == 0);
 
-      int len = file.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
-      lineBuf[len] = '\0';
+      // Read up to SEND_BUF_LINES winners per mutex hold
+      while (file.available() && sendCount < SEND_BUF_LINES) {
 
-      if (len > 0 && lineBuf[len - 1] == '\r') lineBuf[--len] = '\0';
-      if (len == 0) continue;
+        int len = file.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
+        lineBuf[len] = '\0';
 
-      if (firstLine) {
-        firstLine = false;
-        continue;
-      }  // skip CSV header row
+        if (len > 0 && lineBuf[len - 1] == '\r') lineBuf[--len] = '\0';
 
-      if (!matchesDeviceFilter(lineBuf)) continue;
-      if (!extractMinuteKey(lineBuf, curMinKey)) continue;
+        if (firstLine) { firstLine = false; continue; }  // skip CSV header row
+        if (len == 0) continue;
 
-      if (strcmp(curMinKey, prevMinKey) != 0) {
-        // minute boundary → emit the previous minute's last record
-        if (prevLine[0] != '\0') {
-          server.sendContent(prevLine);
-          server.sendContent("\r\n");
+        if (!matchesDeviceFilter(lineBuf)) continue;
+        if (!extractMinuteKey(lineBuf, curMinKey)) continue;
+
+        if (strcmp(curMinKey, prevMinKey) != 0) {
+          if (prevLine[0] != '\0') {
+            strncpy(sendBuf[sendCount], prevLine, 159);
+            sendBuf[sendCount][159] = '\0';
+            sendCount++;
+          }
+          strncpy(prevMinKey, curMinKey, sizeof(prevMinKey));
         }
-        strncpy(prevMinKey, curMinKey, sizeof(prevMinKey));
+
+        strncpy(prevLine, lineBuf, sizeof(prevLine) - 1);
+        prevLine[sizeof(prevLine) - 1] = '\0';
       }
 
-      // keep updating; last record in this minute wins
-      strncpy(prevLine, lineBuf, sizeof(prevLine) - 1);
-      prevLine[sizeof(prevLine) - 1] = '\0';
+      fileDone = !file.available();
+      filePos  = file.position();
+
+      // flush final record on last chunk
+      if (fileDone && prevLine[0] != '\0' && sendCount < SEND_BUF_LINES) {
+        strncpy(sendBuf[sendCount], prevLine, 159);
+        sendBuf[sendCount][159] = '\0';
+        sendCount++;
+        prevLine[0] = '\0';
+      }
+
+      file.close();
+      giveSDMutex();
+
+      // Send buffered lines without holding SD mutex
+      for (int i = 0; i < sendCount; i++) {
+        server.sendContent(sendBuf[i]);
+        server.sendContent("\r\n");
+      }
+
+      // yield so logger and csv_writer can get the mutex
+      vTaskDelay(pdMS_TO_TICKS(10));
     }
-
-    // flush the final pending record
-    if (prevLine[0] != '\0') {
-      server.sendContent(prevLine);
-      server.sendContent("\r\n");
-    }
-
-    file.close();
-    giveSDMutex();
-
-    // brief yield between files so CSV Writer can flush if queued
-    vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
 
@@ -824,21 +866,27 @@ void handleGetConfig() {
   json += String(sysConfig.stop_after_alarm ? 1 : 0);
   json += ",";
 
-  json += "\"min_baseline_samples\":";
-  json += String(sysConfig.min_baseline_samples);
+  json += "\"min_baseline_windows\":";
+  json += String(sysConfig.min_baseline_windows);
   json += ",";
 
-  json += "\"dirty_timeout_hours\":";
-  json += String(sysConfig.dirty_timeout_hours);
+  json += "\"dirty_timeout_min\":";
+  json += String(sysConfig.dirty_timeout_min);
   json += ",";
 
   // BATTERY
   json += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
-  json += "\"power_threshold\":" + String(sysConfig.power_threshold);
+  json += "\"power_threshold\":" + String(sysConfig.power_threshold) + ",";
+
+  // Hormone injection date. Estrus typically shows ~day 20-21 from injection.
+  json += "\"injection_date\":\"";
+  json += String(sysConfig.injection_date);
+  json += "\"";
 
   json += "}";
 
   server.send(200, "application/json", json);
+  logResponse(200);
 }
 
 // ===== SET/SAVE CONFIG DARI USER =====
@@ -877,7 +925,9 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid json body\"}");
+        "{\"error\":\"invalid json body\",\"reason\":\"body is not valid JSON\"}");
+
+      logResponse(400, "invalid json");
 
       return;
     }
@@ -917,7 +967,7 @@ void handleSetConfig() {
         server.send(
           400,
           "application/json",
-          "{\"error\":\"invalid node_id cfg\"}");
+          "{\"error\":\"invalid node_id cfg\",\"field\":\"node_id\",\"reason\":\"failed isValidNodeId check\"}");
 
         return;
       }
@@ -952,7 +1002,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid prox_low cfg\"}");
+        "{\"error\":\"invalid prox_low cfg\",\"field\":\"prox_low\",\"reason\":\"must be 0 or 1\"}");
 
       return;
     }
@@ -972,7 +1022,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid alarm cfg\"}");
+        "{\"error\":\"invalid alarm cfg\",\"field\":\"alarm_enabled\",\"reason\":\"must be 0 or 1\"}");
 
       return;
     }
@@ -997,7 +1047,7 @@ void handleSetConfig() {
         server.send(
           400,
           "application/json",
-          "{\"error\":\"invalid animal_id cfg\"}");
+          "{\"error\":\"invalid animal_id cfg\",\"field\":\"animal_id\",\"reason\":\"failed isValidAnimalId check\"}");
 
         return;
       }
@@ -1036,7 +1086,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid ap_password\"}");
+        "{\"error\":\"invalid ap_password\",\"field\":\"ap_password\",\"reason\":\"length must be 8-20 chars\"}");
 
       return;
     }
@@ -1092,7 +1142,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid record_interval_sec cfg\"}");
+        "{\"error\":\"invalid record_interval_sec cfg\",\"field\":\"record_interval_sec\",\"reason\":\"must be 10-3600\"}");
 
       return;
     }
@@ -1107,12 +1157,12 @@ void handleSetConfig() {
 
     int v = doc["retention_days"].as<int>();
 
-    if (v < 1 || v > 14) {
+    if (v < 1 || v > 21) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid retention_days cfg\"}");
+        "{\"error\":\"invalid retention_days cfg\",\"field\":\"retention_days\",\"reason\":\"must be 1-21\"}");
 
       return;
     }
@@ -1127,12 +1177,12 @@ void handleSetConfig() {
 
     int v = doc["partition_hours"].as<int>();
 
-    if (v < 1 || v > 24 || (24 % v) != 0) {
+    if (v < 3 || v > 24 || (24 % v) != 0) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid partition_hours cfg\"}");
+        "{\"error\":\"invalid partition_hours cfg\",\"field\":\"partition_hours\",\"reason\":\"must be 3-24 and a divisor of 24\"}");
 
       return;
     }
@@ -1152,7 +1202,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid estrus_threshold_pct cfg\"}");
+        "{\"error\":\"invalid estrus_threshold_pct cfg\",\"field\":\"estrus_threshold_pct\",\"reason\":\"must be 0.0-100.0\"}");
 
       return;
     }
@@ -1172,7 +1222,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid stop_after_alarm cfg\"}");
+        "{\"error\":\"invalid stop_after_alarm cfg\",\"field\":\"stop_after_alarm\",\"reason\":\"must be 0 or 1\"}");
 
       return;
     }
@@ -1181,63 +1231,81 @@ void handleSetConfig() {
   }
 
   // ========================
-  // MIN BASELINE SAMPLES
+  // MIN BASELINE WINDOWS
   // ========================
-  if (hasField("min_baseline_samples")) {
+  if (hasField("min_baseline_windows")) {
 
-    int v = doc["min_baseline_samples"].as<int>();
+    int v = doc["min_baseline_windows"].as<int>();
 
-    if (v < 10 || v > 1000) {
+    if (v < 2 || v > 48) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid min_baseline_samples cfg\"}");
+        "{\"error\":\"invalid min_baseline_windows cfg\",\"field\":\"min_baseline_windows\",\"reason\":\"must be 2-48\"}");
 
       return;
     }
 
-    temp.min_baseline_samples = v;
+    temp.min_baseline_windows = (uint8_t)v;
   }
 
   // ========================
-  // DIRTY TIMEOUT
+  // DIRTY TIMEOUT MIN
   // ========================
-  if (hasField("dirty_timeout_hours")) {
+  if (hasField("dirty_timeout_min")) {
 
-    int v = doc["dirty_timeout_hours"].as<int>();
+    int v = doc["dirty_timeout_min"].as<int>();
 
-    if (v < 1 || v > 24) {
+    if (v < 10 || v > 480) {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid dirty_timeout_hours cfg\"}");
+        "{\"error\":\"invalid dirty_timeout_min cfg\",\"field\":\"dirty_timeout_min\",\"reason\":\"must be 10-480\"}");
 
       return;
     }
 
-    temp.dirty_timeout_hours = v;
+    temp.dirty_timeout_min = (uint16_t)v;
   }
 
   // ========================
-  // NO ACTIVITY TIMEOUT
+  // START DATE (YYYY-MM-DD)
+  // Hormone injection date used to synchronize or shorten the natural 21-day
+  // reproductive cycle. Estrus typically shows ~day 20-21 from injection.
+  // Send empty string to clear.
   // ========================
-  if (hasField("no_activity_timeout_hours")) {
+  if (hasField("injection_date")) {
 
-    int v = doc["no_activity_timeout_hours"].as<int>();
+    String id = fieldStr("injection_date");
 
-    if (v < 1 || v > 24) {
+    id.trim();
+
+    if (id.length() == 0) {
+
+      memset(temp.injection_date, 0, sizeof(temp.injection_date));
+
+    } else if (
+      id.length() == 10
+      && id[4] == '-'
+      && id[7] == '-') {
+
+      memset(temp.injection_date, 0, sizeof(temp.injection_date));
+
+      strncpy(temp.injection_date, id.c_str(), sizeof(temp.injection_date) - 1);
+
+    } else {
 
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid no_activity_timeout_hours cfg\"}");
+        "{\"error\":\"invalid injection_date\",\"field\":\"injection_date\",\"reason\":\"must be YYYY-MM-DD or empty string\"}");
+
+      logResponse(400, "invalid injection_date");
 
       return;
     }
-
-    temp.no_activity_timeout_hours = v;
   }
 
   // ========================
@@ -1252,7 +1320,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid current_threshold cfg\"}");
+        "{\"error\":\"invalid current_threshold cfg\",\"field\":\"current_threshold\",\"reason\":\"must be 100.0-150.0\"}");
 
       return;
     }
@@ -1270,7 +1338,7 @@ void handleSetConfig() {
       server.send(
         400,
         "application/json",
-        "{\"error\":\"invalid power_threshold cfg\"}");
+        "{\"error\":\"invalid power_threshold cfg\",\"field\":\"power_threshold\",\"reason\":\"must be 400.0-600.0\"}");
 
       return;
     }
@@ -1293,11 +1361,12 @@ void handleSetConfig() {
   bool estrusThresholdChanged = temp.estrus_threshold_pct != sysConfig.estrus_threshold_pct;
   bool retentionChanged = temp.retention_days != sysConfig.retention_days;
   bool stopAlarmChanged = temp.stop_after_alarm != sysConfig.stop_after_alarm;
-  bool baselineSampleChanged = temp.min_baseline_samples != sysConfig.min_baseline_samples;
-  bool dirtyTimeoutChanged = temp.dirty_timeout_hours != sysConfig.dirty_timeout_hours;
+  bool baselineWindowChanged = temp.min_baseline_windows != sysConfig.min_baseline_windows;
+  bool dirtyMinChanged       = temp.dirty_timeout_min   != sysConfig.dirty_timeout_min;
 
   bool currentChanged = temp.current_threshold != sysConfig.current_threshold;
   bool powerChanged = temp.power_threshold != sysConfig.power_threshold;
+  bool injectionDateChanged = strcmp(temp.injection_date, sysConfig.injection_date) != 0;
 
   sysConfig = temp;
 
@@ -1334,13 +1403,6 @@ void handleSetConfig() {
   // partition berubah
   if (partitionChanged) {
 
-    DateTime now = getNow();
-
-    // resetRuntimePartitionStats(
-    //   now.hour() / sysConfig.partition_hours);
-
-    triggerBaselineRecompute();
-
     logToFile(
       "📊 Partition stats reset. | updated: %u hours",
       sysConfig.partition_hours);
@@ -1365,8 +1427,6 @@ void handleSetConfig() {
   // retention days berubah
   if (retentionChanged) {
 
-    triggerBaselineRecompute();
-
     logToFile(
       "🗂 Retention days updated: %u days",
       sysConfig.retention_days);
@@ -1380,34 +1440,22 @@ void handleSetConfig() {
       sysConfig.stop_after_alarm);
   }
 
-  // min baseline samples berubah
-  if (baselineSampleChanged) {
-
-    triggerBaselineRecompute();
+  // min baseline windows berubah
+  if (baselineWindowChanged) {
 
     logToFile(
-      "🔁 min_baseline_samples updated: %d",
-      sysConfig.min_baseline_samples);
+      "🔁 min_baseline_windows updated: %d",
+      sysConfig.min_baseline_windows);
   }
 
-  // dirty timeout berubah
-  if (dirtyTimeoutChanged) {
+  // dirty timeout min berubah
+  if (dirtyMinChanged) {
 
     resetDirtyDetection();
 
     logToFile(
-      "🔁 dirty_timeout_hours updated: %d",
-      sysConfig.dirty_timeout_hours);
-  }
-
-  // no activity timeout berubah
-  if (noActivityTimeoutChanged) {
-
-    resetDirtyDetection();
-
-    logToFile(
-      "🔁 no_activity_timeout_hours updated: %d",
-      sysConfig.no_activity_timeout_hours);
+      "🔁 dirty_timeout_min updated: %d min",
+      sysConfig.dirty_timeout_min);
   }
 
   // current threshold berubah
@@ -1424,6 +1472,14 @@ void handleSetConfig() {
     logToFile(
       "⚡ Power threshold updated: %.1f%%",
       sysConfig.power_threshold);
+  }
+
+  // injection date berubah
+  if (injectionDateChanged) {
+
+    logToFile(
+      "📅 Injection date updated: %s",
+      sysConfig.injection_date[0] ? sysConfig.injection_date : "(cleared)");
   }
 
   // ==== SAVE CONFIG ====
@@ -1448,11 +1504,11 @@ void handleSetConfig() {
     savedJson += "\"partition_hours\":" + String(sysConfig.partition_hours) + ",";
     savedJson += "\"estrus_threshold_pct\":" + String(sysConfig.estrus_threshold_pct, 2) + ",";
     savedJson += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? 1 : 0) + ",";
-    savedJson += "\"min_baseline_samples\":" + String(sysConfig.min_baseline_samples) + ",";
-    savedJson += "\"dirty_timeout_hours\":" + String(sysConfig.dirty_timeout_hours) + ",";
-
+    savedJson += "\"min_baseline_windows\":" + String(sysConfig.min_baseline_windows) + ",";
+    savedJson += "\"dirty_timeout_min\":" + String(sysConfig.dirty_timeout_min) + ",";
     savedJson += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
-    savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold);
+    savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold) + ",";
+    savedJson += "\"injection_date\":\"" + String(sysConfig.injection_date) + "\"";
 
     savedJson += "}";
 
@@ -1481,6 +1537,15 @@ void handleSetConfig() {
     "application/json",
     json);
 
+  logResponse(200, needRestart ? "restart pending" : "ok");
+
+  // ========================
+  // DEFERRED HEAVY WORK (after response sent to avoid client timeout)
+  // ========================
+  if (partitionChanged || retentionChanged || baselineWindowChanged) {
+    triggerBaselineRecompute();
+  }
+
   // ========================
   // RESTART
   // ========================
@@ -1502,6 +1567,7 @@ void handleResetConfig() {
   resetConfig();
 
   server.send(200, "application/json", "{\"reset\":true}");
+  logResponse(200);
 }
 
 // ===== HANDLE DEVICE NODE =====
@@ -1543,15 +1609,22 @@ void handleLatest() {
   // ========================
   // POWER
   // ========================
-  json += "\"voltage\":" + String(SYS.battery_voltage) + ",";
-  json += "\"current\":" + String(SYS.current) + ",";
-  json += "\"power\":" + String(SYS.power) + ",";
+  auto safeFloat = [](float v) -> String {
+    if (isnan(v) || isinf(v)) return "0.00";
+    return String(v, 2);
+  };
+
+  json += "\"voltage\":"         + safeFloat(SYS.voltage)      + ",";
+  json += "\"current\":"         + safeFloat(SYS.current)      + ",";
+  json += "\"power\":"           + safeFloat(SYS.power)        + ",";
 
   // ========================
   // BATTERY
   // ========================
-  json += "\"battery_percent\":" + String(SYS.battery_pct, 1) + ",";
-  json += "\"battery_days\":" + String(powerStats.estimated_days_left, 1) + ",";
+  json += "\"battery_percent\":" + safeFloat(SYS.battery_pct)  + ",";
+
+  float _bdays = powerStats.estimated_days_left;
+  json += "\"battery_days\":"    + (isnan(_bdays) || isinf(_bdays) ? String("0.0") : String(_bdays, 1)) + ",";
   json += "\"battery_date\":\"" + String(powerStats.estimated_date) + "\",";
 
   // ========================
@@ -1570,6 +1643,7 @@ void handleLatest() {
   server.sendHeader("Connection", "close");
 
   server.send(200, "application/json", json);
+  logResponse(200);
 }
 
 void handleEstrus() {
@@ -1581,38 +1655,90 @@ void handleEstrus() {
 
   touchClient();
 
+  // --- cycle day from injection_date ---
+  int cycleDay = 0;
+  bool hasInjectionDate = (strlen(sysConfig.injection_date) == 10);
+
+  if (hasInjectionDate && SYS.rtc_ok) {
+
+    DateTime now = getNow();
+
+    // parse YYYY-MM-DD
+    char buf[5];
+    strncpy(buf, sysConfig.injection_date, 4); buf[4] = '\0';
+    int sy = atoi(buf);
+    strncpy(buf, sysConfig.injection_date + 5, 2); buf[2] = '\0';
+    int sm = atoi(buf);
+    strncpy(buf, sysConfig.injection_date + 8, 2); buf[2] = '\0';
+    int sd = atoi(buf);
+
+    DateTime startDt(sy, sm, sd, 0, 0, 0);
+
+    int32_t diffSec = (int32_t)(now.unixtime() - startDt.unixtime());
+
+    if (diffSec >= 0) {
+      cycleDay = (diffSec / 86400) + 1;
+    }
+  }
+
+  bool isEstrusWindow = hasInjectionDate && (cycleDay >= 18 && cycleDay <= 21);
+
   String json = "{";
 
   json += "\"partition\":";
   json += String(SYS.partition);
   json += ",";
 
+  auto safeFloat1 = [](float v) -> String {
+    if (isnan(v) || isinf(v)) return "0.0";
+    return String(v, 1);
+  };
+
   json += "\"current_rate\":";
-  json += String(SYS.current_rate * 100.0f, 1);
+  json += safeFloat1(SYS.current_rate);
   json += ",";
 
   json += "\"baseline_rate\":";
-  json += String(SYS.baseline_rate * 100.0f, 1);
+  json += safeFloat1(SYS.baseline_rate);
   json += ",";
 
   json += "\"deviation_pct\":";
-  json += String(SYS.deviation_pct, 1);
+  json += safeFloat1(SYS.deviation_pct);
   json += ",";
 
-  json += "\"threshold_pct\":";
-  json += String(sysConfig.estrus_threshold_pct, 1);
-  json += ",";
+  json += "\"threshold_pct\":100.0,";
 
-  json += "\"baseline_samples\":";
-  json += String(SYS.baseline_samples);
+  json += "\"baseline_windows\":";
+  json += String(SYS.baseline_windows);
   json += ",";
 
   json += "\"estrus\":";
   json += String(SYS.estrus ? 1 : 0);
   json += ",";
 
-  json += "\"valid\":";  // agar tahu baseline sudah cukup atau belum
-  json += String(SYS.baseline_samples >= sysConfig.min_baseline_samples);
+  json += "\"valid\":";
+  json += (SYS.baseline_windows >= sysConfig.min_baseline_windows) ? "true" : "false";
+  json += ",";
+
+  json += "\"injection_date\":\"";
+  json += String(sysConfig.injection_date);
+  json += "\",";
+
+  json += "\"cycle_day\":";
+  json += String(cycleDay);
+  json += ",";
+
+  // is_estrus_window = 1 jika berada di hari 18-21 dari siklus (window deteksi estrus sapi)
+  json += "\"is_estrus_window\":";
+  json += String(isEstrusWindow ? 1 : 0);
+  json += ",";
+
+  json += "\"window_count\":";
+  json += String(getSlidingWindowCount());
+  json += ",";
+
+  json += "\"window_size\":";
+  json += String(getSlidingWindowSize());
 
   json += "}";
 
@@ -1622,6 +1748,7 @@ void handleEstrus() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 void handleStorage() {
@@ -1637,6 +1764,8 @@ void handleStorage() {
       200,
       "application/json",
       "{\"sd\":false}");
+
+    logResponse(200, "sd not ok");
 
     return;
   }
@@ -1689,6 +1818,7 @@ void handleStorage() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 // void handleHealth() {
@@ -1738,11 +1868,12 @@ void handleStorage() {
 
 //   json += "}";
 
-//   server.send(
-//     200,
-//     "application/json",
-//     json);
-// }
+  server.send(
+    200,
+    "application/json",
+    json);
+  logResponse(200);
+}
 
 void handleDevice() {
 
@@ -1801,6 +1932,7 @@ void handleDevice() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 // POST RTC
@@ -1817,6 +1949,8 @@ void handleRTCSync() {
       "application/json",
       "{\"error\":\"invalid json\"}");
 
+    logResponse(400, "invalid json");
+
     return;
   }
 
@@ -1830,12 +1964,16 @@ void handleRTCSync() {
       "application/json",
       "{\"error\":\"invalid epoch\"}");
 
+    logResponse(400, "invalid epoch");
+
     return;
   }
 
   epoch += (7UL * 3600UL);
 
   rtc.adjust(DateTime(epoch));
+
+  syncSystemClock();
 
   SYS.last_sync_millis = millis();
 
@@ -1852,6 +1990,7 @@ void handleRTCSync() {
     200,
     "application/json",
     "{\"success\":true}");
+  logResponse(200);
 }
 
 // GET RTC
@@ -1892,6 +2031,7 @@ void handleRTC() {
     200,
     "application/json",
     json);
+  logResponse(200);
 }
 
 // DEVELOPMENT ONLY | RESET TIME & STATE RTC
@@ -1912,6 +2052,7 @@ void handleRTCClear() {
     200,
     "application/json",
     "{\"success\":true}");
+  logResponse(200);
 }
 
 // ===== LOG REQUEST =====
@@ -1929,6 +2070,15 @@ static void logRequest() {
   msg += server.client().remoteIP().toString();
 
   logToFile(msg);
+}
+
+// ===== LOG RESPONSE =====
+static void logResponse(int code, const char* note) {
+  if (note) {
+    logToFile("📤 %d %s | %s", code, server.uri().c_str(), note);
+  } else {
+    logToFile("📤 %d %s", code, server.uri().c_str());
+  }
 }
 
 // shortcut: register route + auto-log request

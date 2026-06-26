@@ -7,9 +7,17 @@
 
 typedef struct {
   // ===== DEVICE =====
-  char node_id[NODE_ID_MAX];
-  char animal_id[ANIMAL_ID_MAX];
-  char ap_password[32];
+  // All char arrays are grouped first so each starts at a 4-byte-aligned
+  // offset; the ROM strlen/memcpy uses L32I word loads and crashes with
+  // LoadStoreAlignment if the source pointer is not 4-byte aligned.
+  char node_id[NODE_ID_MAX];   // offset 0  (aligned)
+  char animal_id[ANIMAL_ID_MAX]; // offset 16 (aligned)
+  char ap_password[32];          // offset 32 (aligned), ends at 64
+
+  // Hormone injection date (YYYY-MM-DD). Leave empty if not set.
+  // /api/node/estrus reports cycle_day and is_estrus_window (days 20-21).
+  char injection_date[12];       // offset 64 (aligned), ends at 76
+
   bool prox_active_low;  // LOW / HIGH
   bool alarm_enabled;
   uint8_t led_brightness;
@@ -26,8 +34,8 @@ typedef struct {
   float estrus_threshold_pct;
   bool stop_after_alarm;
 
-  uint16_t min_baseline_samples;
-  uint8_t dirty_timeout_hours;
+  uint8_t  min_baseline_windows;   // healthy windows required before z-score is valid (2-48)
+  uint16_t dirty_timeout_min;      // minutes sensor must be stuck before marked untrusted (10-480)
 
 } SystemConfig;
 

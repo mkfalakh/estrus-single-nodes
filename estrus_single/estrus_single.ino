@@ -50,6 +50,7 @@ void setup() {
   if (SYS.sd_ok) {
     setSDReadyForLog(true);
     triggerBaselineRecompute();
+    prefillSlidingWindow();
   }
 
   initCSVWriter();
