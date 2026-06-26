@@ -500,7 +500,6 @@ void handleHistory() {
   String json;
 
   if (!json.reserve(256 + (count * 180))) {
-    free(lines);
     server.send(500, "application/json", "{\"error\":\"oom_json\"}");
     logResponse(500, "oom json reserve");
     return;
@@ -555,9 +554,6 @@ void handleHistory() {
     hasNext ? "true" : "false");
 
   json += "}";
-
-
-  free(lines);
 
   server.sendHeader("Connection", "close");
 
@@ -1160,7 +1156,7 @@ void handleSetConfig() {
 
     int v = doc["retention_days"].as<int>();
 
-    if (v < 1 || v > 21) {
+    if (v < 1 || v > 14) {
 
       server.send(
         400,
@@ -1271,6 +1267,26 @@ void handleSetConfig() {
     }
 
     temp.dirty_timeout_min = (uint16_t)v;
+  }
+
+  // ========================
+  // NO ACTIVITY TIMEOUT
+  // ========================
+  if (hasField("no_activity_timeout_hours")) {
+
+    int v = doc["no_activity_timeout_hours"].as<int>();
+
+    if (v < 1 || v > 24) {
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid no_activity_timeout_hours cfg\",\"field\":\"no_activity_timeout_hours\",\"reason\":\"must be 1-24\"}");
+
+      return;
+    }
+
+    temp.no_activity_timeout_hours = (uint16_t)v;
   }
 
   // ========================
@@ -1459,6 +1475,16 @@ void handleSetConfig() {
     logToFile(
       "🔁 dirty_timeout_min updated: %d min",
       sysConfig.dirty_timeout_min);
+  }
+
+  // no activity timeout berubah
+  if (noActivityTimeoutChanged) {
+
+    resetDirtyDetection();
+
+    logToFile(
+      "🔁 no_activity_timeout_hours updated: %d hours",
+      sysConfig.no_activity_timeout_hours);
   }
 
   // current threshold berubah
@@ -1692,7 +1718,7 @@ void handleEstrus() {
   String json = "{";
 
   json += "\"partition\":";
-  json += String(SYS.partition);
+  json += String(getPartitionIndex());
   json += ",";
 
   auto safeFloat1 = [](float v) -> String {
@@ -1723,7 +1749,7 @@ void handleEstrus() {
   json += ",";
 
   json += "\"valid\":";
-  json += (SYS.baseline_windows >= sysConfig.min_baseline_windows) ? "true" : "false";
+  json += (SYS.baseline_windows >= sysConfig.min_baseline_windows) ? "1" : "0";
   json += ",";
 
   json += "\"injection_date\":\"";
@@ -1960,8 +1986,7 @@ void handleRTCSync() {
     return;
   }
 
-  uint32_t epoch =
-    doc["epoch"] | 0;
+  uint32_t epoch = doc["epoch"] | 0;
 
   if (epoch == 0) {
 
@@ -2136,7 +2161,6 @@ void initWebServer() {
 
   // SYSTEM
   ROUTE("/api/storage", HTTP_GET, handleStorage);  // untuk cek kondisi SDCard
-  ROUTE("/api/version", HTTP_GET, handleVersion);  // cek version device untuk update OTA
 
   // untuk update firmware via OTA
   server.on(
