@@ -35,11 +35,14 @@ void setup() {
   // =========================
   // INIT PIN HARDWARE
   // =========================
+  initRTC();  // sysSetRTC()
+  initPowerMonitor();
   initLED();
   initBuzzer();
-  initRTC();  // sysSetRTC()
 
   initLogger();
+
+  initINA226();
 
   initSDCard();  // di sini set sysSetSD()
   createSDMutex();
@@ -50,8 +53,6 @@ void setup() {
   }
 
   initCSVWriter();
-
-  initINA226();
 
   initProximity();  // pinMode sensor
   setProximityActiveLow(sysConfig.prox_active_low);
@@ -64,20 +65,20 @@ void setup() {
   delay(500);
 
   // =========================
-  // START ALL TASK
-  // =========================
-  startTasks();
-
-  // =========================
   // FINAL LOG
   // =========================
   logToFile("🚀 System Ready");
   logToFile(
-    "Ver:%s | Node:%s | Animal:%s",
+    "FW:%s | Web:%s | Node:%s | Animal:%s",
     FIRMWARE_VERSION,
+    WEB_VERSION,
     sysConfig.node_id,
     sysConfig.animal_id);
 
+  // =========================
+  // START ALL TASK
+  // =========================
+  startTasks();
 
   // run 1x to adjust time RTC | must setting first!
   // adjustRTC();
@@ -86,8 +87,17 @@ void setup() {
 void loop() {
 
   // handleWebServer();
-
   cleanupSessions();
+
+  // TES BATTERY ADC DIVIDER
+  // static unsigned long debugADC = 0;
+  // if (millis() - debugADC > 2000) {
+
+  //   float vBat = readBatteryVoltageADC();
+  //   Serial.printf("BATTERY ADC = %.2f V\n", vBat);
+
+  //   debugADC = millis();
+  // }
 
   // =========================
   // DEBUG SYSTEM
@@ -95,15 +105,9 @@ void loop() {
   static unsigned long lastDebug = 0;
   if (millis() - lastDebug > 30000) {
 
-    // Serial.println(
-    //   "LOGGER STACK: %u",
-    //   uxTaskGetStackHighWaterMark(NULL));  // jika hasil < 500 = stack hampir habis
-
     Serial.println("=========  SYSTEM STATE  ==========\n");
-
-    Serial.printf("ERR: %d | RTCSync: %d | SD: %d | RTC: %d | INA: %d | ESTRUS: %d | BUZZ: %d\n",
-                  sysIsSystemFault(), SYS.rtc_ever_synced, SYS.sd_ok, SYS.rtc_ok, SYS.ina_ok, sysIsEstrus(), sysIsAlarm());
-
+    Serial.printf("Bat: %.2f%% | ERR: %d | RTCSync: %d | SD: %d | RTC: %d | INA: %d | ALARM: %d\n",
+                  SYS.battery_pct, sysIsSystemFault(), SYS.rtc_ever_synced, SYS.sd_ok, SYS.rtc_ok, SYS.ina_ok, sysIsAlarm());
     Serial.println("========== RAM & Storage ==========\n");
 
     // checkFreeSD();
@@ -119,11 +123,16 @@ void loop() {
     lastDebug = millis();
   }
 
+  // =========================
+  // JIKA RESTART DIPANGGIL
+  // =========================
   if (pendingRestart && millis() > restartAt) {
 
-    Serial.println("🔄 Restarting system after change device ID");
+    logToFile("🔄 Restarting system after change device ID or update Firmware");
 
     delay(500);
+
+    saveEnergyStats();
 
     ESP.restart();
   }
