@@ -179,6 +179,8 @@ void loadConfig() {
 
       sysConfig.prox_active_low = prefs.getBool("prox_low", true);
       sysConfig.alarm_enabled = prefs.getBool("alarm", true);
+      sysConfig.led_brightness = prefs.getUChar("ledBright", 10);
+      sysConfig.no_activity_timeout_hours = prefs.getUChar("noActivity", 12);
 
       // Model Estrus
       sysConfig.record_interval_sec = prefs.getUShort("record", 10);
@@ -192,9 +194,10 @@ void loadConfig() {
       // Battery
       sysConfig.current_threshold = prefs.getFloat("curr_th", 150.0);
       sysConfig.power_threshold = prefs.getFloat("pow_th", 600.0);
-      powerStats.energy_mWh = prefs.getFloat("energy", 0);
 
       prefs.end();
+
+      loadEnergyStats();
 
       if (configChanged) {
         saveConfig();
@@ -218,8 +221,10 @@ void loadConfig() {
     strncpy(sysConfig.ap_password, pass.c_str(), sizeof(sysConfig.ap_password) - 1);
 
     strncpy(sysConfig.animal_id, "SAPI-00", sizeof(sysConfig.animal_id) - 1);
-    sysConfig.prox_active_low = true;  // true = LOW trigger | false = HIGH trigger
-    sysConfig.alarm_enabled = true;    // ingin alarm aktif/mati
+    sysConfig.prox_active_low = true;          // true = LOW trigger | false = HIGH trigger
+    sysConfig.alarm_enabled = true;            // ingin alarm aktif/mati
+    sysConfig.led_brightness = 10;             // 1 - 255 | untuk brightness LED RGB
+    sysConfig.no_activity_timeout_hours = 12;  // 1 - 24 | untuk cek kondisi sensor jika state=0 dalam waktu lama
 
     // Model Estrus
     sysConfig.record_interval_sec = 10;     // 10 - 3600
@@ -227,36 +232,17 @@ void loadConfig() {
     sysConfig.partition_hours = 1;          // 1 - 24
     sysConfig.estrus_threshold_pct = 6.0f;  // 0.1 - 100 %
     sysConfig.stop_after_alarm = true;
-    sysConfig.min_baseline_samples = 10;   // 10 - 1000 | untuk validasi baseline
-    sysConfig.dirty_timeout_hours = 2;  // 1 - 24 | batas waktu untuk mengetahui sensor kotor atau tidak
+    sysConfig.min_baseline_samples = 10;  // 10 - 1000 | untuk validasi baseline
+    sysConfig.dirty_timeout_hours = 2;    // 1 - 24 | batas waktu untuk mengetahui sensor kotor atau tidak
 
     // Battery
     sysConfig.current_threshold = 150.0;  // 100 - 150 mA | alert batas maksimal arus batre
     sysConfig.power_threshold = 600.0;    // 400 - 600 mW | alert batas maksimal power batre
-    powerStats.energy_mWh = 0;
 
     saveConfig();
 
     // Debug
     Serial.println("⚙️ Default Config Loaded!");
-
-    // Serial.println(String("node id: ") + sysConfig.node_id);
-    // Serial.println(String("animal id: ") + sysConfig.animal_id);
-    // Serial.println(String("AP password: ") + sysConfig.ap_password);
-    // Serial.println(String("prox mode: ") + sysConfig.prox_active_low);
-    // Serial.println(String("alarm enable ? ") + sysConfig.alarm_enabled);
-
-    // Serial.println(String("rec interval sec: ") + sysConfig.record_interval_sec);
-    // Serial.println(String("retention days: ") + sysConfig.retention_days);
-    // Serial.println(String("partition hours: ") + sysConfig.partition_hours);
-    // Serial.println(String("estrus threshold: ") + sysConfig.estrus_threshold_pct);
-    // Serial.println(String("stop after alarm ? ") + sysConfig.stop_after_alarm);
-    // Serial.println(String("baseline samples: ") + sysConfig.min_baseline_samples);
-    // Serial.println(String("dirty samples: ") + sysConfig.dirty_timeout_hours);
-
-    // Serial.println(String("current threshold: ") + sysConfig.current_threshold);
-    // Serial.println(String("power threshold: ") + sysConfig.power_threshold);
-    // Serial.println(String("energy: ") + powerStats.energy_mWh);
   }
 }
 
@@ -275,6 +261,8 @@ void saveConfig() {
   prefs.putString("ap_pass", String(sysConfig.ap_password));
   prefs.putBool("prox_low", sysConfig.prox_active_low);
   prefs.putBool("alarm", sysConfig.alarm_enabled);
+  prefs.putUChar("ledBright", sysConfig.led_brightness);
+  prefs.putUChar("noActivity", sysConfig.no_activity_timeout_hours);
 
   // Model Estrus
   prefs.putUShort("record", sysConfig.record_interval_sec);
@@ -288,7 +276,6 @@ void saveConfig() {
   // Battery
   prefs.putFloat("curr_th", sysConfig.current_threshold);
   prefs.putFloat("pow_th", sysConfig.power_threshold);
-  prefs.putFloat("energy", powerStats.energy_mWh);
 
   prefs.end();
 
@@ -315,5 +302,65 @@ void resetConfig() {
 
   logToFile("♻️ Config reset factory");
 
+  saveEnergyStats();
+
   ESP.restart();
+}
+
+// untuk load energi baterai setelah device restart
+void loadEnergyStats() {
+
+  Preferences prefs;
+
+  if (!prefs.begin("sapi", true)) {
+
+    logToFile(
+      "⚠️ loadEnergyStats failed");
+
+    return;
+  }
+
+  powerStats.energy_mWh =
+    prefs.getFloat(
+      "energy",
+      0);
+
+  prefs.end();
+
+  powerStats.remaining_mWh =
+    powerStats.battery_capacity_mWh
+    - powerStats.energy_mWh;
+
+  if (powerStats.remaining_mWh < 0) {
+
+    powerStats.remaining_mWh = 0;
+  }
+
+  logToFile(
+    "🔋 Energy loaded: %.2f mWh",
+    powerStats.energy_mWh);
+}
+
+// untuk save energi baterai sebelum device restart
+void saveEnergyStats() {
+
+  Preferences prefs;
+
+  if (!prefs.begin("sapi", false)) {
+
+    logToFile(
+      "⚠️ saveEnergyStats failed");
+
+    return;
+  }
+
+  prefs.putFloat(
+    "energy",
+    powerStats.energy_mWh);
+
+  prefs.end();
+
+  logToFile(
+    "🔋 Energy saved: %.2f mWh",
+    powerStats.energy_mWh);
 }

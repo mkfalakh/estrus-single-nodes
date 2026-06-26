@@ -12,6 +12,8 @@ typedef struct {
   char ap_password[32];
   bool prox_active_low;  // LOW / HIGH
   bool alarm_enabled;
+  uint8_t led_brightness;
+  uint8_t no_activity_timeout_hours;
 
   // ===== BATTERY ALERT =====
   float current_threshold;
@@ -43,3 +45,6 @@ extern bool isValidAnimalId(const String &id);
 void loadConfig();
 void saveConfig();
 void resetConfig();
+
+void saveEnergyStats();
+void loadEnergyStats();
