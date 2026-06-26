@@ -16,6 +16,7 @@
 #include "estrus_model.h"
 #include "wifi_manager.h"
 #include "csv_writer.h"
+#include "update_manager.h"
 #include <WebServer.h>
 #include <SD.h>
 #include <Arduino.h>
@@ -794,6 +795,14 @@ void handleGetConfig() {
   json += String(sysConfig.alarm_enabled ? 1 : 0);
   json += ",";
 
+  json += "\"led_brightness\":";
+  json += String(sysConfig.led_brightness);
+  json += ",";
+
+  json += "\"no_activity_timeout_hours\":";
+  json += String(sysConfig.no_activity_timeout_hours);
+  json += ",";
+
   // MODEL ESTRUS
   json += "\"record_interval_sec\":";
   json += String(sysConfig.record_interval_sec);
@@ -1052,6 +1061,26 @@ void handleSetConfig() {
   }
 
   // ========================
+  // LED BRIGHTNESS
+  // ========================
+  if (hasField("led_brightness")) {
+
+    int v = doc["led_brightness"].as<int>();
+
+    if (v < 1 || v > 255) {
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid led_brightness cfg\"}");
+
+      return;
+    }
+
+    temp.led_brightness = v;
+  }
+
+  // ========================
   // RECORD INTERVAL SEC
   // ========================
   if (hasField("record_interval_sec")) {
@@ -1172,13 +1201,13 @@ void handleSetConfig() {
   }
 
   // ========================
-  // DIRTY TIMEOUT SAMPLES
+  // DIRTY TIMEOUT
   // ========================
   if (hasField("dirty_timeout_hours")) {
 
     int v = doc["dirty_timeout_hours"].as<int>();
 
-    if (v < 1.0 || v > 24.0) {
+    if (v < 1 || v > 24) {
 
       server.send(
         400,
@@ -1189,6 +1218,26 @@ void handleSetConfig() {
     }
 
     temp.dirty_timeout_hours = v;
+  }
+
+  // ========================
+  // NO ACTIVITY TIMEOUT
+  // ========================
+  if (hasField("no_activity_timeout_hours")) {
+
+    int v = doc["no_activity_timeout_hours"].as<int>();
+
+    if (v < 1 || v > 24) {
+
+      server.send(
+        400,
+        "application/json",
+        "{\"error\":\"invalid no_activity_timeout_hours cfg\"}");
+
+      return;
+    }
+
+    temp.no_activity_timeout_hours = v;
   }
 
   // ========================
@@ -1236,6 +1285,9 @@ void handleSetConfig() {
   // simpan nilai lama sebelum overwrite
   bool proxChanged = temp.prox_active_low != sysConfig.prox_active_low;
   bool alarmChanged = temp.alarm_enabled != sysConfig.alarm_enabled;
+  bool brightnessChanged = temp.led_brightness != sysConfig.led_brightness;
+  bool noActivityTimeoutChanged = temp.no_activity_timeout_hours != sysConfig.no_activity_timeout_hours;
+
   bool intervalChanged = temp.record_interval_sec != sysConfig.record_interval_sec;
   bool partitionChanged = temp.partition_hours != sysConfig.partition_hours;
   bool estrusThresholdChanged = temp.estrus_threshold_pct != sysConfig.estrus_threshold_pct;
@@ -1269,6 +1321,14 @@ void handleSetConfig() {
     logToFile(
       "🚨 Alarm device updated: %s",
       sysConfig.alarm_enabled ? "LOW" : "HIGH");
+  }
+
+  // led brightness berubah
+  if (brightnessChanged) {
+
+    logToFile(
+      "💡 led brightness updated: %u",
+      sysConfig.led_brightness);
   }
 
   // partition berubah
@@ -1330,7 +1390,7 @@ void handleSetConfig() {
       sysConfig.min_baseline_samples);
   }
 
-  // dirty timeout samples berubah
+  // dirty timeout berubah
   if (dirtyTimeoutChanged) {
 
     resetDirtyDetection();
@@ -1338,6 +1398,16 @@ void handleSetConfig() {
     logToFile(
       "🔁 dirty_timeout_hours updated: %d",
       sysConfig.dirty_timeout_hours);
+  }
+
+  // no activity timeout berubah
+  if (noActivityTimeoutChanged) {
+
+    resetDirtyDetection();
+
+    logToFile(
+      "🔁 no_activity_timeout_hours updated: %d",
+      sysConfig.no_activity_timeout_hours);
   }
 
   // current threshold berubah
@@ -1370,6 +1440,9 @@ void handleSetConfig() {
     savedJson += "\"ap_password\":\"" + String(sysConfig.ap_password) + "\",";
     savedJson += "\"prox_low\":" + String(sysConfig.prox_active_low ? 1 : 0) + ",";
     savedJson += "\"alarm_enabled\":" + String(sysConfig.alarm_enabled ? 1 : 0) + ",";
+    savedJson += "\"led_brightness\":" + String(sysConfig.led_brightness) + ",";
+    savedJson += "\"no_activity_timeout_hours\":" + String(sysConfig.no_activity_timeout_hours) + ",";
+
     savedJson += "\"record_interval_sec\":" + String(sysConfig.record_interval_sec) + ",";
     savedJson += "\"retention_days\":" + String(sysConfig.retention_days) + ",";
     savedJson += "\"partition_hours\":" + String(sysConfig.partition_hours) + ",";
@@ -1377,12 +1450,13 @@ void handleSetConfig() {
     savedJson += "\"stop_after_alarm\":" + String(sysConfig.stop_after_alarm ? 1 : 0) + ",";
     savedJson += "\"min_baseline_samples\":" + String(sysConfig.min_baseline_samples) + ",";
     savedJson += "\"dirty_timeout_hours\":" + String(sysConfig.dirty_timeout_hours) + ",";
+
     savedJson += "\"current_threshold\":" + String(sysConfig.current_threshold) + ",";
     savedJson += "\"power_threshold\":" + String(sysConfig.power_threshold);
 
     savedJson += "}";
 
-    logToFile("💾 [config] saved=" + savedJson);
+    logToFile("💾 [config] saved = " + savedJson);
   }
 
   logToFile(
@@ -1414,7 +1488,7 @@ void handleSetConfig() {
 
     pendingRestart = true;
 
-    restartAt = millis() + 1500;
+    restartAt = millis() + 2000;
   }
 }
 
@@ -1463,18 +1537,20 @@ void handleLatest() {
   json += "\"sensor2\":" + String(SYS.sensor2 ? 1 : 0) + ",";
   json += "\"sensor1_dirty\":" + String(SYS.sensor1_dirty ? 1 : 0) + ",";
   json += "\"sensor2_dirty\":" + String(SYS.sensor2_dirty ? 1 : 0) + ",";
+  json += "\"sensor1_no_activity\":" + String(SYS.sensor1_no_activity ? 1 : 0) + ",";
+  json += "\"sensor2_no_activity\":" + String(SYS.sensor2_no_activity ? 1 : 0) + ",";
 
   // ========================
   // POWER
   // ========================
-  json += "\"voltage\":" + String(SYS.voltage) + ",";
+  json += "\"voltage\":" + String(SYS.battery_voltage) + ",";
   json += "\"current\":" + String(SYS.current) + ",";
   json += "\"power\":" + String(SYS.power) + ",";
 
   // ========================
   // BATTERY
   // ========================
-  json += "\"battery_percent\":" + String(SYS.battery_pct) + ",";
+  json += "\"battery_percent\":" + String(SYS.battery_pct, 1) + ",";
   json += "\"battery_days\":" + String(powerStats.estimated_days_left, 1) + ",";
   json += "\"battery_date\":\"" + String(powerStats.estimated_date) + "\",";
 
@@ -1838,7 +1914,6 @@ void handleRTCClear() {
     "{\"success\":true}");
 }
 
-
 // ===== LOG REQUEST =====
 static void logRequest() {
   String msg = "📡 ";
@@ -1905,6 +1980,46 @@ void initWebServer() {
 
   // SYSTEM
   ROUTE("/api/storage", HTTP_GET, handleStorage);  // untuk cek kondisi SDCard
+  ROUTE("/api/version", HTTP_GET, handleVersion);  // cek version device untuk update OTA
+
+  // untuk update firmware via OTA
+  server.on(
+    "/api/update/firmware",
+    HTTP_POST,
+
+    []() {
+      logRequest();
+
+      if (otaSuccess) {
+
+        server.send(
+          200,
+          "application/json",
+          "{\"success\":true,\"restart\":true}");
+
+        pendingRestart = true;
+        restartAt = millis() + 3000;
+
+      } else {
+
+        server.send(
+          500,
+          "application/json",
+          "{\"success\":false}");
+      }
+    },
+
+    handleFirmwareUpload);
+
+  // untuk update web dashboard via OTA
+  // server.on(
+  //   "/api/update/web", HTTP_POST, []() {
+  //     logRequest();
+  //   },
+  //   handleWebUpload);
+
+  ROUTE("/api/update/status", HTTP_GET, handleUpdateStatus);  // untuk cek status update via OTA
+  ROUTE("/api/update/check", HTTP_POST, handleUpdateCheck);   // untuk cek versi ketika file diupload
 
   ROUTE("/ping", HTTP_GET, []() {
     server.send(200, "text/plain", "OK");
