@@ -81,6 +81,10 @@ void watchdogTask(void* pv) {
       "HealthMonitor",
       healthMonitorTaskHandle);
 
+    printTask(
+      "Battery",
+      batteryTaskHandle);
+
     // Serial.printf(
     //   "Heap:%u | PSRAM:%u\n",
     //   ESP.getFreeHeap(),
