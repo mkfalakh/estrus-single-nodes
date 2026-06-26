@@ -9,7 +9,8 @@ SystemState SYS = {
   .ina_ok = false,
 
   .battery_pct = 0,
-  .voltage = 0,
+  .battery_voltage = 0,
+  .bus_voltage = 0,
   .current = 0,
   .power = 0,
 
@@ -17,6 +18,8 @@ SystemState SYS = {
   .sensor2 = false,
   .sensor1_dirty = false,
   .sensor2_dirty = false,
+  .sensor1_no_activity = false,
+  .sensor2_no_activity = false,
 
   .current_rate = 0,
   .baseline_rate = 0,
@@ -61,13 +64,6 @@ void sysSetSensor2Dirty(bool d2) {
   SYS.sensor2_dirty = d2;
 }
 
-void sysSetPower(float pct, float v, float c, float p) {
-  SYS.battery_pct = pct;
-  SYS.voltage = v;
-  SYS.current = c;
-  SYS.power = p;
-}
-
 void sysSetEstrusResult(
   const EstrusResult &r) {
 
@@ -97,6 +93,18 @@ void sysSetSensorState(bool s1, bool s2, bool d1, bool d2) {
 
   SYS.sensor1_dirty = d1;
   SYS.sensor2_dirty = d2;
+}
+
+// BATTERY
+void sysSetPower(float pct, float v, float c, float p) {
+  SYS.battery_pct = pct;
+  SYS.battery_voltage = v;
+  SYS.current = c;
+  SYS.power = p;
+}
+
+bool sysIsLowBattery() {
+  return (SYS.battery_pct <= 20);  // masih hardcode. bisa dipindah jadi config (sysConfig.low_battery_pct).
 }
 
 // ========================
@@ -141,10 +149,6 @@ bool sysIsSystemFault() {
   return (!SYS.sd_ok || !SYS.rtc_ok || !SYS.ina_ok);
 }
 
-bool sysIsLowBattery() {
-  return (SYS.battery_pct < 20);  // masih hardcode. bisa dipindah jadi config (sysConfig.low_battery_pct).
-}
-
 bool sysIsAlarm() {
   return SYS.alarm_active;
 }
@@ -159,6 +163,14 @@ bool sysIsSensor1Dirty() {
 
 bool sysIsSensor2Dirty() {
   return SYS.sensor2_dirty;
+}
+
+bool sysIsSensor1NoActivity() {
+  return SYS.sensor1_no_activity;
+}
+
+bool sysIsSensor2NoActivity() {
+  return SYS.sensor2_no_activity;
 }
 
 // MODEL

@@ -15,7 +15,8 @@ typedef struct {
 
   // --- power ---
   float battery_pct;
-  float voltage;
+  float battery_voltage;  // dengan resistor divider 4k7
+  float bus_voltage;      // bus voltage dari INA266
   float current;
   float power;
 
@@ -24,6 +25,8 @@ typedef struct {
   bool sensor2;
   bool sensor1_dirty;
   bool sensor2_dirty;
+  bool sensor1_no_activity;
+  bool sensor2_no_activity;
 
   // --- model estrus ---
   float current_rate;
@@ -80,6 +83,8 @@ void sysSetSensor1Dirty(bool d1);
 void sysSetSensor2Dirty(bool d2);
 bool sysIsSensor1Dirty();
 bool sysIsSensor2Dirty();
+bool sysIsSensor1NoActivity();
+bool sysIsSensor2NoActivity();
 
 // MODEL
 float sysGetDeviationPct();
