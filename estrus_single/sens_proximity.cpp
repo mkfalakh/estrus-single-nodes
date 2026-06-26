@@ -18,6 +18,8 @@ static bool proxActiveLow = true;
 
 static uint32_t sensor1ActiveSince = 0;
 static uint32_t sensor2ActiveSince = 0;
+static uint32_t sensor1InactiveSince = 0;
+static uint32_t sensor2InactiveSince = 0;
 
 static bool lastSensor1 = false;
 static bool lastSensor2 = false;
@@ -27,47 +29,59 @@ static bool lastSensor2 = false;
 // ========================
 void updateDirtyDetection(bool s1, bool s2) {
 
-  uint32_t timeoutSec =
-    sysConfig.dirty_timeout_hours * 3600UL;
+  uint32_t timeoutDirtySec = sysConfig.dirty_timeout_hours * 3600UL;
+  uint32_t timeoutActivitySec = sysConfig.no_activity_timeout_hours * 3600UL;
 
   // SENSOR 1
   if (s1) {
 
-    sensor1ActiveSince +=
-      sysConfig.record_interval_sec;
+    sensor1ActiveSince += sysConfig.record_interval_sec;
 
-    SYS.sensor1_dirty =
-      (sensor1ActiveSince >= timeoutSec);
+    sensor1InactiveSince = 0;
+    SYS.sensor1_no_activity = false;
+
+    SYS.sensor1_dirty = (sensor1ActiveSince >= timeoutDirtySec);
 
   } else {
 
     sensor1ActiveSince = 0;
     SYS.sensor1_dirty = false;
+
+    sensor1InactiveSince += sysConfig.record_interval_sec;
+    SYS.sensor1_no_activity = (sensor1InactiveSince >= timeoutActivitySec);
   }
 
   // SENSOR 2
   if (s2) {
 
-    sensor2ActiveSince +=
-      sysConfig.record_interval_sec;
+    sensor2ActiveSince += sysConfig.record_interval_sec;
 
-    SYS.sensor2_dirty =
-      (sensor2ActiveSince >= timeoutSec);
+    sensor2InactiveSince = 0;
+    SYS.sensor2_no_activity = false;
+
+    SYS.sensor2_dirty = (sensor2ActiveSince >= timeoutDirtySec);
 
   } else {
 
     sensor2ActiveSince = 0;
     SYS.sensor2_dirty = false;
+
+    sensor2InactiveSince += sysConfig.record_interval_sec;
+    SYS.sensor2_no_activity = (sensor2InactiveSince >= timeoutActivitySec);
   }
 
   logToFile(
-    "DIRTY S1=%lu/%lu S2=%lu/%lu",
+    "DIRTY S1=%lu/%lu S2=%lu/%lu | NO ACTIVITY S1=%lu/%lu S2=%lu/%lu",
 
     sensor1ActiveSince,
-    timeoutSec,
-
+    timeoutDirtySec,
     sensor2ActiveSince,
-    timeoutSec);
+    timeoutDirtySec,
+
+    sensor1InactiveSince,
+    timeoutActivitySec,
+    sensor2InactiveSince,
+    timeoutActivitySec);
 }
 
 // RESET DIRTY DETECTION
@@ -78,6 +92,12 @@ void resetDirtyDetection() {
 
   sensor1ActiveSince = 0;
   sensor2ActiveSince = 0;
+
+  sensor1InactiveSince = 0;
+  sensor2InactiveSince = 0;
+
+  SYS.sensor1_no_activity = false;
+  SYS.sensor2_no_activity = false;
 }
 
 // ========================
@@ -94,10 +114,14 @@ void sensorTask(void *pv) {
   // cek sensor kotor
   static bool lastD1 = false;
   static bool lastD2 = false;
+  static bool lastNA1 = false;
+  static bool lastNA2 = false;
   static DateTime dirty1Since;
   static DateTime dirty2Since;
 
   while (true) {
+
+    static unsigned long lastEnergySave = 0;
 
     unsigned long now = millis();
 
@@ -201,21 +225,42 @@ void sensorTask(void *pv) {
       bool standing = (s1 || s2);
 
       // ==========================
-      // POWER
+      // SENSOR NO ACTIVITY EVENT
       // ==========================
-      float voltage = readVoltage();
-      float current = readCurrent();
-      float power = voltage * current;
+      bool na1 = SYS.sensor1_no_activity;
+      bool na2 = SYS.sensor2_no_activity;
 
-      float dt =
-        (now - lastPowerTs) / 1000.0f;
+      if (na1 != lastNA1) {
 
-      lastPowerTs = now;
+        if (na1) {
 
-      updatePowerStats(
-        power,
-        voltage,
-        dt);
+          logToFile(
+            "🟠 Sensor 1 no activity");
+
+        } else {
+
+          logToFile(
+            "🟢 Sensor 1 activity restored");
+        }
+
+        lastNA1 = na1;
+      }
+
+      if (na2 != lastNA2) {
+
+        if (na2) {
+
+          logToFile(
+            "🟠 Sensor 2 no activity");
+
+        } else {
+
+          logToFile(
+            "🟢 Sensor 2 activity restored");
+        }
+
+        lastNA2 = na2;
+      }
 
       // ==========================
       // ESTRUS RESULT
@@ -241,6 +286,8 @@ void sensorTask(void *pv) {
         rtcValid = (t.year() >= 2026);
 
         if (!rtcValid && millis() - lastRtcLog >= 60000) {
+
+          SYS.rtc_ok = false;
 
           logToFile(
             "⚠️ RTC year invalid: %d",
@@ -276,12 +323,6 @@ void sensorTask(void *pv) {
         s2,
         d1,
         d2);
-
-      sysSetPower(
-        powerStats.percentage,
-        voltage,
-        current,
-        power);
 
       if (rtcValid) {
 
@@ -332,8 +373,8 @@ void sensorTask(void *pv) {
         data.deviation_pct = result.deviation_pct;
         data.estrus = result.estrus;
 
-        data.voltage = voltage;
-        data.current = current;
+        data.voltage = SYS.battery_voltage;
+        data.current = SYS.current;
         data.battery_pct = powerStats.percentage;
 
         // ==========================
@@ -360,7 +401,7 @@ void sensorTask(void *pv) {
           "Base:%.1f%% "
           "Dev:%.1f%% "
           "| Estrus:%d "
-          "| V:%.1f%% I:%.1f%% W:%.1f%% Bat:%.1f%%",
+          "| V:%.2f%% I:%.2f%% W:%.2f%% Bat:%.0f%%",
 
           s1,
           s2,
@@ -374,9 +415,9 @@ void sensorTask(void *pv) {
           result.deviation_pct,
           result.estrus,
 
-          voltage,
-          current,
-          power,
+          SYS.battery_voltage,
+          SYS.current,
+          SYS.power,
           powerStats.percentage);
 
         lastDebug = millis();
