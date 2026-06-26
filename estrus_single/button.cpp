@@ -82,7 +82,7 @@ static void handleButtonEvent(ButtonEvent event) {
 
         resetConfig();
 
-        Serial.println("⚠️ Config reset!");
+        Serial.println("⚠️ Config reset by button");
 
         buzzerPlay(BUZZER_LONG_PRESS);
       }

@@ -16,7 +16,7 @@ static int step = 0;
 unsigned long lastTrigger = 0;
 
 static volatile BuzzerPattern buzzerPattern = BUZZER_NONE;
-#define LOW_BATTERY_INTERVAL_MS (30UL * 60UL * 1000UL)
+#define LOW_BATTERY_INTERVAL_MS (120000UL)  // 2 menit sekali alarm bunyi untuk low battery
 
 void buzzerOn() {
 #if BUZZER_PASSIVE
@@ -51,7 +51,7 @@ void buzzerPlay(BuzzerPattern pattern) {
 // manage alarm estrus & alarm system
 bool isFaultAlarm() {
 
-  return !SYS.sd_ok || !SYS.rtc_ok || !SYS.ina_ok || SYS.sensor1_dirty || SYS.sensor2_dirty;
+  return !SYS.sd_ok || !SYS.rtc_ok || !SYS.ina_ok || SYS.sensor1_dirty || SYS.sensor2_dirty || SYS.sensor1_no_activity || SYS.sensor2_no_activity;
 }
 
 bool shouldAlarm() {
@@ -125,12 +125,14 @@ void buzzerTask(void *pv) {
     if (faultAlarm && !lastFaultAlarm) {
 
       logToFile(
-        "🚨 Fault alarm active (SD:%d RTC:%d INA:%d S1:%d S2:%d)",
+        "🚨 Fault alarm active (SD:%d RTC:%d INA:%d s1:%d s2:%d s1_na:%d s2_na:%d)",
         SYS.sd_ok,
         SYS.rtc_ok,
         SYS.ina_ok,
         SYS.sensor1_dirty,
-        SYS.sensor2_dirty);
+        SYS.sensor2_dirty,
+        SYS.sensor1_no_activity,
+        SYS.sensor2_no_activity);
     }
 
     // Log saat fault selesai
@@ -178,9 +180,7 @@ void buzzerTask(void *pv) {
     }
 
     // LOW BATTERY MODE
-    if (sysIsLowBattery()
-        && !sysIsAlarm()
-        && sysConfig.alarm_enabled) {
+    if (sysIsLowBattery() && !sysIsAlarm() && sysConfig.alarm_enabled) {
 
       if (now - lastLowBatteryBeep >= LOW_BATTERY_INTERVAL_MS) {
 
@@ -229,18 +229,7 @@ void buzzerTask(void *pv) {
       case BUZZER_LONG_PRESS:
 
         buzzerOn();
-        vTaskDelay(pdMS_TO_TICKS(80));
-
-        buzzerOff();
-        vTaskDelay(pdMS_TO_TICKS(80));
-
-        buzzerOn();
-        vTaskDelay(pdMS_TO_TICKS(80));
-
-        buzzerOff();
-
-        buzzerOn();
-        vTaskDelay(pdMS_TO_TICKS(80));
+        vTaskDelay(pdMS_TO_TICKS(3000));
 
         buzzerOff();
 
