@@ -71,29 +71,6 @@ static bool getFirmwareVersionFromBuffer(
   return true;
 }
 
-
-// GET /api/version | cek versi firmware dan web dashboard
-void handleVersion() {
-
-  String json = "{";
-
-  json += "\"firmware_version\":\"";
-  json += FIRMWARE_VERSION;
-  json += "\",";
-
-  json += "\"web_version\":\"";
-  json += WEB_VERSION;
-  json += "\"";
-
-  json += "}";
-
-  server.send(
-    200,
-    "application/json",
-    json);
-}
-
-
 // GET /api/update/status | update status ketika upload file
 void handleUpdateStatus() {
 
