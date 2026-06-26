@@ -21,10 +21,15 @@ const el = {
   baselineRate: document.getElementById("baselineRate"),
   deviationPct: document.getElementById("deviationPct"),
   estrusThreshold: document.getElementById("estrusThreshold"),
-  baselineSamples: document.getElementById("baselineSamples"),
+  baselineWindow: document.getElementById("baselineWindow"),
   baselineValid: document.getElementById("baselineValid"),
   estrusStatus: document.getElementById("estrusStatus"),
   cowCondition: document.getElementById("cowCondition"),
+  injectionDate: document.getElementById("injectionDate"),
+  cycleDay: document.getElementById("cycleDay"),
+  windowCount: document.getElementById("windowCount"),
+  windowSize: document.getElementById("windowSize"),
+  estrusWindow: document.getElementById("estrusWindow"),
 
   // sensors
   sensor1: document.getElementById("sensor1"),
@@ -165,11 +170,11 @@ function showToast(msg, type = "info") {
 // LOAD VERSIONS
 async function loadVersion() {
   try {
-    const res = await apiJson("/api/version");
+    const res = await apiJson("/api/node/device");
 
-    el.footerFwVersion.textContent = res.firmware_version || "-";
+    el.footerFwVersion.textContent = res.firmware || "-";
     // el.footerWebVersion.textContent = res.web_version || "-";
-    el.modalFwVersion.textContent = res.firmware_version || "-";
+    el.modalFwVersion.textContent = res.firmware || "-";
     // el.modalWebVersion.textContent = res.web_version || "-";
   } catch (err) {
     console.error(err);
@@ -634,39 +639,30 @@ function renderLatest(data) {
 async function loadEstrus() {
   try {
     const e = await apiJson(`/api/node/estrus`);
-    // console.log("ESTRUS:", e);
+    console.log("load estrus: ", e);
     if (!e) return;
 
-    if (e.valid === false) {
-      if (el.partitionHours) el.partitionHours.innerText = "--";
-      if (el.currentRate) el.currentRate.innerText = "--";
-      if (el.baselineRate) el.baselineRate.innerText = "--";
-      if (el.deviationPct) el.deviationPct.innerText = "--";
-      if (el.estrusThreshold) el.estrusThreshold.innerText = "--";
-      if (el.baselineSamples) el.baselineSamples.innerText = "--";
-      if (el.baselineValid) el.baselineValid.innerText = "Tidak Valid";
-      if (el.estrusStatus) {
-        el.estrusStatus.innerText = "INSUFFICIENT DATA";
-        el.estrusStatus.className = "status-normal";
-      }
-      return;
-    }
-
-    if (el.partitionHours)
-      el.partitionHours.innerText = `${e.partition || 0} Jam`;
+    if (el.partitionHours) el.partitionHours.innerText = `${e.partition}`;
     if (el.currentRate)
-      el.currentRate.innerText = `${Number(e.current_rate || 0).toFixed(1)} %`;
+      el.currentRate.innerText = `${Number(e.current_rate ?? 0).toFixed(1)} %`;
     if (el.baselineRate)
-      el.baselineRate.innerText = `${Number(e.baseline_rate || 0).toFixed(1)} %`;
+      el.baselineRate.innerText = `${Number(e.baseline_rate ?? 0).toFixed(1)} %`;
     if (el.deviationPct)
-      el.deviationPct.innerText = `${Number(e.deviation_pct || 0).toFixed(1)} %`;
+      el.deviationPct.innerText = `${Number(e.deviation_pct ?? 0).toFixed(1)} %`;
     if (el.estrusThreshold)
-      el.estrusThreshold.innerText = `${Number(e.threshold_pct || 0).toFixed(1)} %`;
-    if (el.baselineSamples)
-      el.baselineSamples.innerText = `${e.baseline_samples || 0} Sampel`;
+      el.estrusThreshold.innerText = `${Number(e.threshold_pct ?? 0).toFixed(1)} %`;
+    if (el.baselineWindow)
+      el.baselineWindow.innerText = `${e.baseline_windows}`;
+    if (el.windowCount) el.windowCount.innerText = `${e.window_count}`;
+    if (el.windowSize) el.windowSize.innerText = `${e.window_size}`;
 
+    if (el.injectionDate) el.injectionDate.innerText = `${e.injection_date}`;
+    if (el.cycleDay) el.cycleDay.innerText = `${e.cycle_day}`;
+
+    if (el.estrusWindow)
+      el.estrusWindow.innerText = e.is_estrus_window ? "1" : "0";
     if (el.baselineValid)
-      el.baselineValid.innerText = e.valid ? "Valid" : "Tidak Valid";
+      el.baselineValid.innerText = e.valid ? "Valid" : "Belum Valid";
     if (el.estrusStatus) {
       el.estrusStatus.innerText = e.estrus ? "BIRAHI" : "NORMAL";
       el.estrusStatus.className = e.estrus ? "status-estrus" : "status-normal";
@@ -708,9 +704,10 @@ function fillConfigForm(cfg) {
   setValue("partitionCfg", cfg.partition_hours);
   setValue("estrusCfg", cfg.estrus_threshold_pct);
   setValue("stopAfterAlarm", cfg.stop_after_alarm ? 1 : 0);
-  setValue("baselineCfg", cfg.min_baseline_samples);
-  setValue("dirtyCfg", cfg.dirty_timeout_hours);
+  setValue("baselineCfg", cfg.min_baseline_windows);
+  setValue("dirtyCfg", cfg.dirty_timeout_min);
   setValue("noActivityCfg", cfg.no_activity_timeout_hours);
+  setValue("injectionDateCfg", cfg.injection_date);
 
   setValue("currentThreshold", cfg.current_threshold);
   setValue("powerThreshold", cfg.power_threshold);
@@ -807,10 +804,10 @@ function validateConfig() {
   if (!validateRange(el.ledBrightness.value, 1, 255)) valid = false;
   if (!validateRange("recordCfg", 10, 3600)) valid = false;
   if (!validateRange("retentionCfg", 1, 14)) valid = false;
-  if (!validateRange("partitionCfg", 1, 24)) valid = false;
+  if (!validateRange("partitionCfg", 3, 24)) valid = false;
   if (!validateRange("estrusCfg", 0.1, 100)) valid = false;
-  if (!validateRange("baselineCfg", 10, 1000)) valid = false;
-  if (!validateRange("dirtyCfg", 1, 24)) valid = false;
+  if (!validateRange("baselineCfg", 2, 48)) valid = false;
+  if (!validateRange("dirtyCfg", 10, 480)) valid = false;
   if (!validateRange("noActivityCfg", 1, 24)) valid = false;
   if (!validateRange("currentThreshold", 100, 150)) valid = false;
   if (!validateRange("powerThreshold", 400, 600)) valid = false;
@@ -840,53 +837,41 @@ async function saveConfig() {
       node_id: nodeId,
       animal_id: animalId,
       ap_password: document.getElementById("apPassword")?.value || "estrus123",
-      prox_active_low: Number(document.getElementById("proxLow")?.value || 0),
-      alarm_enabled: Number(
-        document.getElementById("alarmEnabled")?.value || 0,
-      ),
+      prox_active_low: Number(document.getElementById("proxLow")?.value),
+      alarm_enabled: Number(document.getElementById("alarmEnabled")?.value),
       led_brightness: Number(el.ledBrightness.value),
 
       // ESTRUS
-      record_interval_sec: Number(
-        document.getElementById("recordCfg")?.value || 0,
-      ),
+      record_interval_sec: Number(document.getElementById("recordCfg")?.value),
 
-      retention_days: Number(
-        document.getElementById("retentionCfg")?.value || 0,
-      ),
+      retention_days: Number(document.getElementById("retentionCfg")?.value),
 
-      partition_hours: Number(
-        document.getElementById("partitionCfg")?.value || 0,
-      ),
+      partition_hours: Number(document.getElementById("partitionCfg")?.value),
 
-      estrus_threshold_pct: Number(
-        document.getElementById("estrusCfg")?.value || 0,
-      ),
+      estrus_threshold_pct: Number(document.getElementById("estrusCfg")?.value),
 
       stop_after_alarm: Number(
-        document.getElementById("stopAfterAlarm")?.value || 0,
+        document.getElementById("stopAfterAlarm")?.value,
       ),
 
-      min_baseline_samples: Number(
-        document.getElementById("baselineCfg")?.value || 0,
+      min_baseline_windows: Number(
+        document.getElementById("baselineCfg")?.value,
       ),
 
-      dirty_timeout_hours: Number(
-        document.getElementById("dirtyCfg")?.value || 0,
-      ),
+      dirty_timeout_min: Number(document.getElementById("dirtyCfg")?.value),
 
       no_activity_timeout_hours: Number(
-        document.getElementById("noActivityCfg")?.value || 0,
+        document.getElementById("noActivityCfg")?.value,
       ),
+
+      injection_date: document.getElementById("injectionDateCfg")?.value,
 
       // BATTERY
       current_threshold: Number(
-        document.getElementById("currentThreshold")?.value || 0,
+        document.getElementById("currentThreshold")?.value,
       ),
 
-      power_threshold: Number(
-        document.getElementById("powerThreshold")?.value || 0,
-      ),
+      power_threshold: Number(document.getElementById("powerThreshold")?.value),
     };
 
     console.log("Saving config:", payload);
