@@ -4,6 +4,7 @@
 #include "config_runtime.h"
 #include "system_state.h"
 #include "logger.h"
+#include "power_monitor.h"
 #include <Adafruit_NeoPixel.h>
 
 #define RGB_BUILTIN_PIN 48  // pin default LED RGB ESP32-S3
@@ -25,13 +26,18 @@ static unsigned long wifiWakeTs = 0;
 
 // helper
 void setLED(uint8_t r, uint8_t g, uint8_t b) {
-  // use PWM hardware (pin adc)
-  // common anode LED RGB 4 kaki | LED RGB eksternal
-  ledcWrite(LED_R, 255 - r);
-  ledcWrite(LED_G, 255 - g);
-  ledcWrite(LED_B, 255 - b);
 
-  // LED RGB bawaan ESP32-S3
+  uint8_t brightness = sysConfig.led_brightness;
+
+  r = (uint16_t)r * brightness / 255;
+  g = (uint16_t)g * brightness / 255;
+  b = (uint16_t)b * brightness / 255;
+
+  analogWrite(LED_R, 255 - r);
+  analogWrite(LED_G, 255 - g);
+  analogWrite(LED_B, 255 - b);
+
+  builtinRGB.setBrightness(brightness);
   builtinRGB.setPixelColor(0, builtinRGB.Color(r, g, b));
 
   builtinRGB.show();
@@ -96,7 +102,6 @@ void initLED() {
 
   // LED RGB bawaan esp32s3
   builtinRGB.begin();
-  builtinRGB.setBrightness(50);
   builtinRGB.clear();
   builtinRGB.show();
 
@@ -113,7 +118,7 @@ void updateLedPattern() {
 
     ledPattern = LED_SENSOR_DIRTY;
 
-  } else if (sysIsSystemFault()) {
+  } else if (sysIsSystemFault() || sysIsSensor1NoActivity() || sysIsSensor2NoActivity()) {
 
     ledPattern = LED_FAULT;
 
@@ -156,10 +161,12 @@ void ledTask(void *pv) {
 
         case LED_FAULT:
           logToFile(
-            "💡 LED -> FAULT (YELLOW) SD:%d RTC:%d INA:%d",
+            "💡 LED -> FAULT (YELLOW) SD:%d RTC:%d INA:%d s1_na:%d s2_na:%d ",
             SYS.sd_ok,
             SYS.rtc_ok,
-            SYS.ina_ok);
+            SYS.ina_ok,
+            SYS.sensor1_no_activity,
+            SYS.sensor2_no_activity);
           break;
 
         case LED_SENSOR_DIRTY:
@@ -188,7 +195,7 @@ void ledTask(void *pv) {
 
       ledPattern = LED_SENSOR_DIRTY;
 
-    } else if (sysIsSystemFault()) {
+    } else if (sysIsSystemFault() || sysIsSensor1NoActivity() || sysIsSensor2NoActivity()) {
 
       ledPattern = LED_FAULT;
 
