@@ -6,6 +6,7 @@
 #include <INA226_WE.h>
 
 INA226_WE ina226(INA226_I2C_ADDRESS);
+static constexpr float VOLT_CORRECTION = 0.972f;
 
 // float shuntVoltage_mV = 0.0;
 // float loadVoltage_V = 0.0;
@@ -15,7 +16,7 @@ INA226_WE ina226(INA226_I2C_ADDRESS);
 // float selisih = 0.0;
 
 // voltCorrection = V multimeter / V ina226 = 0.972
-float voltCorrection = 0.972;
+// float voltCorrection = 0.972;
 
 bool initINA226() {
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -34,7 +35,7 @@ bool initINA226() {
   // ina226.setMeasureMode(INA226_CONTINUOUS);  // choose mode and uncomment for change of default
 
   // 🔥 KALIBRASI
-  ina226.setResistorRange(0.1, 0.9);  // Rshunt=0.1Ω, Imax= 0.1/100mA|0.01/10mA
+  ina226.setResistorRange(0.1, 0.3);  // Rshunt=0.1Ω, Imax= 0.1/100mA|0.01/10mA
   // ina226.setCorrectionFactor(0.972);
 
   logToFile("✅ INA OK");
@@ -42,19 +43,34 @@ bool initINA226() {
   return true;
 }
 
-float readVoltage() {
-  // bus voltage (V)
-  return ina226.getBusVoltage_V() * voltCorrection;
+float readBusVoltage() {
+
+  float voltage =
+    ina226.getBusVoltage_V();
+
+  if (isnan(voltage)) {
+    return 0.0f;
+  }
+
+  return voltage * VOLT_CORRECTION;
 }
 
 float readCurrent() {
-  // shunt current (mA)
-  return ina226.getCurrent_mA();
+
+  float current =
+    ina226.getCurrent_mA();
+
+  if (isnan(current)) {
+    return 0.0f;
+  }
+
+  return current;
 }
 
 float readPower() {
-  // bus power (mW)
-  return ina226.getBusPower();
+  float voltage = readBusVoltage();
+  float current = readCurrent();
+  return voltage * current;
 }
 
 

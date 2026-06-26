@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 bool initINA226();
-float readVoltage();
+float readBusVoltage();
 float readCurrent();
 float readPower();
 
