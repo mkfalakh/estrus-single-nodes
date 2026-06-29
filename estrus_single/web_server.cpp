@@ -704,14 +704,14 @@ void handleDownload() {
 
   // Send buffer: collect per-minute winners while holding SD mutex,
   // then release mutex and do HTTP I/O without holding it.
-  static const int SEND_BUF_LINES = 32;
-  char sendBuf[SEND_BUF_LINES][160];
+  static const int SEND_BUF_LINES = 8;
+  static char sendBuf[SEND_BUF_LINES][160];
   int sendCount = 0;
 
-  char lineBuf[160];
-  char prevLine[160];
-  char prevMinKey[17];
-  char curMinKey[17];
+  static char lineBuf[160];
+  static char prevLine[160];
+  static char prevMinKey[17];
+  static char curMinKey[17];
 
   // iterate oldest → newest within retention window
   for (int d = (int)sysConfig.retention_days - 1; d >= 0; d--) {
