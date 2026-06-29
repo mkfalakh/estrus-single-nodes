@@ -644,13 +644,13 @@ async function loadEstrus() {
 
     if (el.partitionHours) el.partitionHours.innerText = `${e.partition}`;
     if (el.currentRate)
-      el.currentRate.innerText = `${Number(e.current_rate ?? 0).toFixed(1)} %`;
+      el.currentRate.innerText = `${Number(e.current_rate ?? 0).toFixed(2)} %`;
     if (el.baselineRate)
-      el.baselineRate.innerText = `${Number(e.baseline_rate ?? 0).toFixed(1)} %`;
+      el.baselineRate.innerText = `${Number(e.baseline_rate ?? 0).toFixed(2)} %`;
     if (el.deviationPct)
-      el.deviationPct.innerText = `${Number(e.deviation_pct ?? 0).toFixed(1)} %`;
+      el.deviationPct.innerText = `${Number(e.deviation_pct ?? 0).toFixed(2)} %`;
     if (el.estrusThreshold)
-      el.estrusThreshold.innerText = `${Number(e.threshold_pct ?? 0).toFixed(1)} %`;
+      el.estrusThreshold.innerText = `${Number(e.threshold_pct ?? 0).toFixed(2)} %`;
     if (el.baselineWindow)
       el.baselineWindow.innerText = `${e.baseline_windows}`;
     if (el.windowCount) el.windowCount.innerText = `${e.window_count}`;
@@ -1012,8 +1012,8 @@ function renderHistory(rows) {
       <td>${r.sensor2_state ?? 0}</td>
       <td>${r.sensor1_dirty ?? 0}</td>
       <td>${r.sensor2_dirty ?? 0}</td>
-      <td>${Number(r.deviation ?? 0).toFixed(1)}</td>
-      <td>${r.estrus ? "Ya" : "Tidak"}</td>
+      <td>${Number(r.deviation ?? 0).toFixed(2)}</td>
+      <td>${r.estrus ? "1" : "0"}</td>
       <td>${Number(r.voltage ?? 0).toFixed(2)}</td>
       <td>${Number(r.current ?? 0).toFixed(2)}</td>
       <td>${Number(r.battery_pct ?? 0).toFixed(0)}%</td>
@@ -1024,12 +1024,59 @@ function renderHistory(rows) {
 }
 
 // DOWNLOAD
-function downloadCSV(date) {
-  if (!date) {
-    showToast("Pilih tanggal", "error");
-    return;
+async function downloadCSV() {
+  const btn = document.getElementById("downloadCsvBtn");
+
+  try {
+    if (btn) btn.disabled = true;
+
+    const res = await fetch("/api/download", {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    const blob = await res.blob();
+
+    let filename = "retention.csv";
+
+    const disposition = res.headers.get("Content-Disposition");
+
+    if (disposition) {
+      const match = disposition.match(/filename="?([^"]+)"?/i);
+
+      if (match) {
+        filename = match[1];
+      }
+    }
+
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = filename;
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    a.remove();
+
+    URL.revokeObjectURL(url);
+
+    showToast("CSV berhasil didownload", "success");
+  } catch (err) {
+    console.error(err);
+
+    showToast("Download CSV gagal", "error");
+  } finally {
+    if (btn) btn.disabled = false;
   }
-  window.location.href = `${API_BASE}/api/download?date=${encodeURIComponent(date)}`;
 }
 
 // Helpers
