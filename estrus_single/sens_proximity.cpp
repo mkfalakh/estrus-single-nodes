@@ -300,26 +300,20 @@ void sensorTask(void *pv) {
 
       if (rtcValid) {
         checkTimeTransitions();
+
         updateSensor2(s2, d1, d2);
+
         result = evaluateEstrus();
+
+        sysSetEstrusResult(result);
       }
 
       // ==========================
       // SYSTEM STATE
       // ==========================
-      sysSetSensorState(
-        s1,
-        s2,
-        d1,
-        d2);
-
-      if (rtcValid) {
-
-        sysSetEstrusResult(result);
-      }
+      sysSetSensorState(s1, s2, d1, d2);
 
       // ALARM HANDLING JIKA MENCAPAI ESTRUS
-
       // validasi estrus jika sesuai baseline samples
       bool currentEstrus = result.valid && result.estrus;
 
