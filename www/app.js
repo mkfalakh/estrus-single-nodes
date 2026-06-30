@@ -14,6 +14,12 @@ const el = {
   rtcTimeHeader: document.getElementById("rtcTimeHeader"),
   ledBrightness: document.getElementById("ledBrightness"),
   ledBrightnessValue: document.getElementById("ledBrightnessValue"),
+  freeSDCard: document.getElementById("freeSDCard"),
+  usedSDCard: document.getElementById("usedSDCard"),
+  logQueue: document.getElementById("logQueue"),
+  sensorQueue: document.getElementById("sensorQueue"),
+  csvRowsToday: document.getElementById("csvRowsToday"),
+  retentionDayStat: document.getElementById("retentionDayStat"),
 
   // estrus
   partitionHours: document.getElementById("partitionHours"),
@@ -166,6 +172,22 @@ function showToast(msg, type = "info") {
 //     showToast("Logout gagal", "error");
 //   }
 // }
+
+// LOAD STORAGE
+async function loadStorage() {
+  try {
+    const res = await apiJson("/api/storage");
+
+    el.freeSDCard.textContent = `${Number(res.free_sd_mb || 0).toFixed(0)}`;
+    el.usedSDCard.textContent = `${Number(res.used_sd_mb || 0).toFixed(0)}`;
+    el.logQueue.textContent = res.log_queue || "0";
+    el.sensorQueue.textContent = res.sensor_queue || "0";
+    el.csvRowsToday.textContent = res.csv_rows_today || "0";
+    el.retentionDayStat.textContent = res.retention_days || "0";
+  } catch (err) {
+    console.error(err);
+  }
+}
 
 // LOAD VERSIONS
 async function loadVersion() {
@@ -531,6 +553,7 @@ async function startDashboard() {
     await loadEstrus();
     await loadConfig();
     await loadRTC();
+    await loadStorage();
   } catch (err) {
     console.error(err);
   }
@@ -549,6 +572,7 @@ async function startDashboard() {
       await loadLatest();
       await loadEstrus();
       await loadRTC();
+      await loadStorage();
     } catch (err) {
       if (err?.name !== "AbortError") {
         console.error(err);
@@ -597,8 +621,19 @@ function renderLatest(data) {
 
   if (el.cowCondition) {
     const isStanding = data.sensor1 || data.sensor2;
-    el.cowCondition.innerText = isStanding ? "BERDIRI" : "REBAH";
-    el.cowCondition.className = isStanding ? "sapi-berdiri" : "sapi-rebah";
+    const s1NoActivity = data.sensor1_no_activity;
+    const s2NoActivity = data.sensor2_no_activity;
+
+    if (isStanding && (!s1NoActivity || !s2NoActivity)) {
+      el.cowCondition.innerText = "BERDIRI";
+      el.cowCondition.className = "sapi-berdiri";
+    } else if (!isStanding && (!s1NoActivity || !s2NoActivity)) {
+      el.cowCondition.innerText = "REBAH";
+      el.cowCondition.className = "sapi-rebah";
+    } else {
+      el.cowCondition.innerText = "⚠️ Sapi Sakit/Keluar Kandang/Mati";
+      el.cowCondition.className = "sapi-rebah";
+    }
   }
 
   // battery
