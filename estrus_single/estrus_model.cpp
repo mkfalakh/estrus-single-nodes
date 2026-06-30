@@ -13,34 +13,32 @@
 // 1.5 h at the minimum interval (10 s) = 540 samples max
 // =====================================================
 
-#define DETECT_WINDOW_MAX  540   // max buffer entries (covers 1.5 h at 10 s interval)
-#define MAX_PARTITIONS     24
+#define DETECT_WINDOW_MAX 540  // max buffer entries (covers 1.5 h at 10 s interval)
+#define MAX_PARTITIONS 24
 
-static bool     slidingBuf[DETECT_WINDOW_MAX];   // sensor2_state samples
-static bool     dirtyBuf[DETECT_WINDOW_MAX];     // d1||d2 per sample
-static uint16_t bufHead  = 0;
+static bool slidingBuf[DETECT_WINDOW_MAX];  // sensor2_state samples
+static bool dirtyBuf[DETECT_WINDOW_MAX];    // d1||d2 per sample
+static uint16_t bufHead = 0;
 static uint16_t bufCount = 0;
 
-static uint8_t  lastDay       = 255;
-static uint8_t  lastPartition = 255;
+static uint8_t lastDay = 255;
+static uint8_t lastPartition = 255;
 
 // =====================================================
 // HELPERS
 // =====================================================
 
-#define DETECT_WINDOW_H  1.5f  // sliding window duration in hours
+#define DETECT_WINDOW_H 1.5f  // sliding window duration in hours
 
-static uint16_t windowSize()
-{
+static uint16_t windowSize() {
   if (sysConfig.record_interval_sec == 0) return 1;
   uint32_t sz = (uint32_t)(DETECT_WINDOW_H * 3600.0f) / sysConfig.record_interval_sec;
-  if (sz < 1)                  sz = 1;
-  if (sz > DETECT_WINDOW_MAX)  sz = DETECT_WINDOW_MAX;
+  if (sz < 1) sz = 1;
+  if (sz > DETECT_WINDOW_MAX) sz = DETECT_WINDOW_MAX;
   return (uint16_t)sz;
 }
 
-uint8_t getPartitionIndex()
-{
+uint8_t getPartitionIndex() {
   if (sysConfig.partition_hours == 0) return 0;
   return getNow().hour() / sysConfig.partition_hours;
 }
@@ -49,14 +47,17 @@ uint8_t getPartitionIndex()
 // SLIDING WINDOW UPDATE
 // =====================================================
 
-void resetSlidingWindow()
-{
-  bufHead  = 0;
+void resetSlidingWindow() {
+  bufHead = 0;
   bufCount = 0;
 }
 
-uint16_t getSlidingWindowCount() { return bufCount; }
-uint16_t getSlidingWindowSize()  { return windowSize(); }
+uint16_t getSlidingWindowCount() {
+  return bufCount;
+}
+uint16_t getSlidingWindowSize() {
+  return windowSize();
+}
 
 // =====================================================
 // PREFILL SLIDING WINDOW FROM CSV (called once at boot)
@@ -67,8 +68,7 @@ uint16_t getSlidingWindowSize()  { return windowSize(); }
 // =====================================================
 
 static int prefillFromFile(const String &path, uint16_t need,
-                            char lines[][160])
-{
+                           char lines[][160]) {
   if (!SD.exists(path)) return 0;
   File f = SD.open(path);
   if (!f) return 0;
@@ -78,8 +78,7 @@ static int prefillFromFile(const String &path, uint16_t need,
   return got;
 }
 
-static bool parseField(const char *line, int idx, char *out, size_t outSize)
-{
+static bool parseField(const char *line, int idx, char *out, size_t outSize) {
   int cur = 0;
   const char *s = line, *e = line;
   while (*e) {
@@ -106,8 +105,7 @@ static bool parseField(const char *line, int idx, char *out, size_t outSize)
   return false;
 }
 
-void prefillSlidingWindow()
-{
+void prefillSlidingWindow() {
   if (!SYS.rtc_ok || !SYS.sd_ok) return;
 
   uint16_t need = windowSize();
@@ -116,7 +114,7 @@ void prefillSlidingWindow()
   // readCsvPage returns newest-first; collect into temp array then inject
   // oldest-first so the ring buffer order matches live ingestion order.
   // Allocate on heap to avoid blowing the setup() stack (~160 * need bytes).
-  char (*lines)[160] = (char (*)[160])malloc(need * 160);
+  char(*lines)[160] = (char(*)[160])malloc(need * 160);
   if (!lines) {
     logToFile("⚠️ prefill: malloc failed");
     return;
@@ -135,7 +133,7 @@ void prefillSlidingWindow()
   // if today not enough, top up from yesterday
   if ((uint16_t)got < need) {
     uint16_t remaining = need - (uint16_t)got;
-    char (*extra)[160] = (char (*)[160])malloc(remaining * 160);
+    char(*extra)[160] = (char(*)[160])malloc(remaining * 160);
     if (extra) {
       int extra_got = prefillFromFile(yestPath, remaining, extra);
       // append yesterday rows after today rows
@@ -162,7 +160,10 @@ void prefillSlidingWindow()
     bool d1 = parseField(row, 5, d1buf, sizeof(d1buf)) && atoi(d1buf);
     bool d2 = parseField(row, 6, d2buf, sizeof(d2buf)) && atoi(d2buf);
 
-    if (d1 || d2) { skipped++; continue; }
+    if (d1 || d2) {
+      skipped++;
+      continue;
+    }
 
     bool s2 = parseField(row, 4, s2buf, sizeof(s2buf)) && atoi(s2buf);
     updateSensor2(s2, false, false);
@@ -175,10 +176,9 @@ void prefillSlidingWindow()
             injected, skipped, bufCount, need);
 }
 
-void updateSensor2(bool s2, bool d1, bool d2)
-{
+void updateSensor2(bool s2, bool d1, bool d2) {
   slidingBuf[bufHead] = s2;
-  dirtyBuf[bufHead]   = (d1 || d2);
+  dirtyBuf[bufHead] = (d1 || d2);
   bufHead = (bufHead + 1) % DETECT_WINDOW_MAX;
   if (bufCount < DETECT_WINDOW_MAX) bufCount++;
 }
@@ -187,16 +187,15 @@ void updateSensor2(bool s2, bool d1, bool d2)
 // TIME TRANSITIONS (day rollover only)
 // =====================================================
 
-void checkTimeTransitions()
-{
+void checkTimeTransitions() {
   if (!SYS.rtc_ok) return;
 
   DateTime now = getNow();
-  uint8_t  newDay       = now.day();
-  uint8_t  newPartition = getPartitionIndex();
+  uint8_t newDay = now.day();
+  uint8_t newPartition = getPartitionIndex();
 
   if (lastDay == 255) {
-    lastDay       = newDay;
+    lastDay = newDay;
     lastPartition = newPartition;
     return;
   }
@@ -207,7 +206,7 @@ void checkTimeTransitions()
     logToFile("📅 New day → baseline recomputed");
   }
 
-  lastDay       = newDay;
+  lastDay = newDay;
   lastPartition = newPartition;
 }
 
@@ -216,15 +215,20 @@ void checkTimeTransitions()
 // Returns 0 if injection_date not set or RTC unavailable.
 // =====================================================
 
-static int cycleDay()
-{
+static int cycleDay() {
   if (strlen(sysConfig.injection_date) != 10) return 0;
   if (!SYS.rtc_ok) return 0;
 
   char buf[5];
-  strncpy(buf, sysConfig.injection_date,     4); buf[4] = '\0'; int sy = atoi(buf);
-  strncpy(buf, sysConfig.injection_date + 5, 2); buf[2] = '\0'; int sm = atoi(buf);
-  strncpy(buf, sysConfig.injection_date + 8, 2); buf[2] = '\0'; int sd = atoi(buf);
+  strncpy(buf, sysConfig.injection_date, 4);
+  buf[4] = '\0';
+  int sy = atoi(buf);
+  strncpy(buf, sysConfig.injection_date + 5, 2);
+  buf[2] = '\0';
+  int sm = atoi(buf);
+  strncpy(buf, sysConfig.injection_date + 8, 2);
+  buf[2] = '\0';
+  int sd = atoi(buf);
 
   DateTime inj(sy, sm, sd, 0, 0, 0);
   int32_t diffSec = (int32_t)(getNow().unixtime() - inj.unixtime());
@@ -236,8 +240,7 @@ static int cycleDay()
 // MAIN EVALUATION
 // =====================================================
 
-EstrusResult evaluateEstrus()
-{
+EstrusResult evaluateEstrus() {
   EstrusResult r = {};
 
   uint16_t wSize = windowSize();
@@ -247,27 +250,27 @@ EstrusResult evaluateEstrus()
   // --------------------------------------------------
   // 1. Scan sliding window: on_frac, rises, dirty flag
   // --------------------------------------------------
-  uint16_t onCount  = 0;
-  uint16_t rises    = 0;
-  bool     winDirty = false;
-  bool     prev     = false;
+  uint16_t onCount = 0;
+  uint16_t rises = 0;
+  bool winDirty = false;
+  bool prev = false;
 
   for (uint16_t i = 0; i < wSize; i++) {
     uint16_t idx = (uint16_t)(bufHead + DETECT_WINDOW_MAX - wSize + i) % DETECT_WINDOW_MAX;
     bool val = slidingBuf[idx];
-    if (val)          onCount++;
+    if (val) onCount++;
     if (val && !prev) rises++;
     if (dirtyBuf[idx]) winDirty = true;
     prev = val;
   }
 
-  float duration_h  = (float)wSize * sysConfig.record_interval_sec / 3600.0f;
-  float on_frac     = (float)onCount / (float)wSize;
+  float duration_h = (float)wSize * sysConfig.record_interval_sec / 3600.0f;
+  float on_frac = (float)onCount / (float)wSize;
   float rises_per_h = (duration_h > 0.0f) ? ((float)rises / duration_h) : 0.0f;
 
   r.current_rate = on_frac * 100.0f;
 
-  SYS.current_rate = r.current_rate;
+  // SYS.current_rate = r.current_rate;
 
   // --------------------------------------------------
   // 2. Quality gate
@@ -280,21 +283,25 @@ EstrusResult evaluateEstrus()
   // --------------------------------------------------
   // 3. Baseline (median + MAD)
   // --------------------------------------------------
-  uint8_t  p = getPartitionIndex();
-  float    medianRate, madRate;
+  uint8_t p = getPartitionIndex();
+  float medianRate, madRate;
   uint16_t nWindows;
 
   if (!getCachedBaseline(p, medianRate, madRate, nWindows)) return r;
 
-  r.baseline_rate    = medianRate * 100.0f;
+  r.baseline_rate = medianRate * 100.0f;
   r.baseline_windows = nWindows;
 
-  SYS.baseline_rate = r.baseline_rate;
-  SYS.baseline_windows = r.baseline_windows;
+  // SYS.baseline_rate = r.baseline_rate;
+  // SYS.baseline_windows = r.baseline_windows;
 
   if (nWindows < sysConfig.min_baseline_windows) {
     r.valid = false;
     return r;
+  }
+
+  if (madRate < 0.0001f) {
+    madRate = 0.0001f;
   }
 
   // --------------------------------------------------
@@ -310,11 +317,11 @@ EstrusResult evaluateEstrus()
   // --------------------------------------------------
   // 5. Calendar gate (days 20-21; bypass if no injection date)
   // --------------------------------------------------
-  int cd         = cycleDay();
+  int cd = cycleDay();
   bool calendarOk = (cd == 0) || (cd >= 20 && cd <= 21);
 
   r.estrus = (r.z_score >= z_threshold) && calendarOk;
-  r.valid  = true;
+  r.valid = true;
 
   (void)rises_per_h;  // available for future use / debug logging
 
