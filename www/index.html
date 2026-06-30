@@ -35,6 +35,7 @@
               class="alarm-btn alarm-inactive"
               onclick="stopAlarm()"
               title="Master Alarm"
+              disabled
             >
               <svg
                 id="icon-alarm"
@@ -199,7 +200,7 @@
               <div class="stat-value" id="cycleDay">-</div>
             </div>
             <div>
-              <div class="stat-unit">Partisi</div>
+              <div class="stat-unit">Index Partisi</div>
               <div class="stat-value" id="partitionHours">-</div>
             </div>
             <div>
@@ -244,7 +245,7 @@
         <!-- Battery Info -->
         <div class="card">
           <div class="card-header">
-            <span>Kondisi Baterai</span>
+            <span>Kondisi Perangkat</span>
             <svg
               width="16"
               height="16"
@@ -258,6 +259,7 @@
             </svg>
           </div>
           <div class="card-content-grid">
+            <!-- BATTERY -->
             <div>
               <div class="stat-unit">Baterai</div>
               <div class="stat-value" id="batteryPercent">-</div>
@@ -277,6 +279,33 @@
             <div>
               <div class="stat-unit">Daya (mW)</div>
               <div id="batteryPower">-</div>
+            </div>
+            <!-- STORAGE SDCARD -->
+            <div>
+              <div class="stat-unit">Penyimpanan Tersisa (MB)</div>
+              <div id="freeSDCard">-</div>
+            </div>
+            <div>
+              <div class="stat-unit">Penyimpanan Terpakai (MB)</div>
+              <div id="usedSDCard">-</div>
+            </div>
+            <!-- QUEUE -->
+            <div>
+              <div class="stat-unit">Antrian Log</div>
+              <div id="logQueue">-</div>
+            </div>
+            <div>
+              <div class="stat-unit">Antrian Sensor</div>
+              <div id="sensorQueue">-</div>
+            </div>
+            <!-- CSV DATA -->
+            <div>
+              <div class="stat-unit">Baris Data Hari Ini</div>
+              <div id="csvRowsToday">-</div>
+            </div>
+            <div>
+              <div class="stat-unit">Hari Retensi</div>
+              <div id="retentionDayStat">-</div>
             </div>
           </div>
         </div>
@@ -584,7 +613,7 @@
               </div>
 
               <div class="form-group">
-                <label>Partisi</label>
+                <label>Partisi Setiap (Jam)</label>
                 <select id="partitionCfg" required>
                   <option value="3">3</option>
                   <option value="4">4</option>
@@ -648,7 +677,7 @@
                   max="150"
                   step="0.1"
                   placeholder="100 ~ 150"
-                  required
+                  readonly
                 />
               </div>
 
@@ -661,7 +690,7 @@
                   max="600"
                   step="0.1"
                   placeholder="400 ~ 600"
-                  required
+                  readonly
                 />
               </div>
 
