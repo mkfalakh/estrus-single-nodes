@@ -608,20 +608,20 @@ input:focus {
   border: 1px solid #334155;
 }
 .sapi-berdiri {
-  color: #c97878;
+  color: #2563eb;
   font-size: 1.25rem;
   font-weight: 700;
 }
 .sapi-rebah {
-  color: #cf742a;
+  color: #f97316;
   font-size: 1.25rem;
   font-weight: 700;
 }
 :root.dark-mode .sapi-berdiri {
-  color: #fca5a5;
+  color: #93c5fd;
 }
 :root.dark-mode .sapi-rebah {
-  color: #fa8c32;
+  color: #fdba74;
 }
 .status-normal {
   color: #166534;
