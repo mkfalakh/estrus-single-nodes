@@ -183,7 +183,7 @@ void loadConfig() {
       sysConfig.no_activity_timeout_hours = prefs.getUChar("noActivity", 12);
 
       // Model Estrus
-      sysConfig.record_interval_sec = prefs.getUShort("record", 10);
+      sysConfig.record_interval_sec = prefs.getUShort("record", 30);
       sysConfig.retention_days = prefs.getUChar("retain", 7);
       sysConfig.partition_hours = prefs.getUChar("part", 3);
       sysConfig.estrus_threshold_pct = prefs.getFloat("estrus", 75.0f);
@@ -233,7 +233,7 @@ void loadConfig() {
     sysConfig.no_activity_timeout_hours = 12;  // 1 - 24 | untuk cek kondisi sensor jika state=0 dalam waktu lama
 
     // Model Estrus
-    sysConfig.record_interval_sec = 10;      // 10 - 3600
+    sysConfig.record_interval_sec = 30;      // 10 - 3600
     sysConfig.retention_days = 7;            // 1 - 14
     sysConfig.partition_hours = 3;           // 3,4,6,8,12,24 (divisor of 24, min 3)
     sysConfig.estrus_threshold_pct = 75.0f;  // 0-100 → z_threshold = val/100*4.0 → default z=3.0
