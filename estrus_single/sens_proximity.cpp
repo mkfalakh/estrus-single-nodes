@@ -294,6 +294,9 @@ void sensorTask(void *pv) {
         }
       }
 
+      // reset reading csv rows if new day
+      resetCsvRowsIfNewDay();
+
       // ==========================
       // SYSTEM CORE
       // ==========================
