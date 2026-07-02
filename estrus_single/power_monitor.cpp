@@ -59,6 +59,8 @@ float voltageToPercent(float v) {
   return 0.0f;
 }
 
+
+// update power stats
 void updatePowerStats(
   float power_mW,
   float voltage,
@@ -66,10 +68,14 @@ void updatePowerStats(
 
   static float lastPct = 100.0f;
 
+  // ==========================
+  // Battery Percentage (Voltage)
+  // ==========================
+
   float newPct =
     voltageToPercent(voltage);
 
-  // update hanya jika berubah >= 2%
+  // update jika berubah >= 2%
   if (fabs(newPct - lastPct) >= 2.0f) {
 
     lastPct = newPct;
@@ -90,26 +96,58 @@ void updatePowerStats(
 
   powerStats.energy_mWh += energy;
 
+  if (powerStats.energy_mWh < 0.0f) {
+
+    powerStats.energy_mWh = 0.0f;
+  }
+
+  if (powerStats.energy_mWh > powerStats.battery_capacity_mWh) {
+
+    powerStats.energy_mWh =
+      powerStats.battery_capacity_mWh;
+  }
+
   // ==========================
   // Moving Average Power
   // ==========================
 
-  powerStats.avgPower_mW =
-    (powerStats.avgPower_mW * 0.95f)
-    + (power_mW * 0.05f);
+  if (powerStats.avgPower_mW <= 0.1f) {
+
+    // sample pertama
+    powerStats.avgPower_mW =
+      power_mW;
+
+  } else {
+
+    powerStats.avgPower_mW =
+      (powerStats.avgPower_mW * 0.95f)
+      + (power_mW * 0.05f);
+  }
 
   // ==========================
   // Remaining Energy
   // ==========================
 
-  powerStats.remaining_mWh =
+  float remainByVoltage =
     powerStats.battery_capacity_mWh
     * (powerStats.percentage / 100.0f);
 
-  if (powerStats.remaining_mWh < 0) {
+  float remainByCounter =
+    powerStats.battery_capacity_mWh
+    - powerStats.energy_mWh;
 
-    powerStats.remaining_mWh = 0;
+  if (remainByCounter < 0.0f) {
+
+    remainByCounter = 0.0f;
   }
+
+  // gunakan nilai yang lebih kecil
+  // agar estimasi tidak terlalu optimistis
+
+  powerStats.remaining_mWh =
+    min(
+      remainByVoltage,
+      remainByCounter);
 
   // ==========================
   // Runtime Prediction
@@ -123,14 +161,13 @@ void updatePowerStats(
 
   } else {
 
-    powerStats.estimated_hours_left = 0;
+    powerStats.estimated_hours_left = 0.0f;
   }
 
   powerStats.estimated_days_left =
     powerStats.estimated_hours_left
     / 24.0f;
 }
-
 
 // menggunakan divider 4k7 2 buah
 float readBatteryVoltageADC() {
@@ -154,6 +191,12 @@ float readBatteryVoltageADC() {
   batteryVoltage *=
     BATTERY_CORRECTION;
 
+  // logToFile(
+  //   "RAW=%.0f ADC=%.3f BAT=%.3f",
+  //   raw,
+  //   adcVoltage,
+  //   batteryVoltage);
+
   if (filteredBatteryVoltage == 0.0f) {
 
     filteredBatteryVoltage =
@@ -162,8 +205,8 @@ float readBatteryVoltageADC() {
   } else {
 
     filteredBatteryVoltage =
-      (filteredBatteryVoltage * 0.9f)
-      + (batteryVoltage * 0.1f);
+      (filteredBatteryVoltage * 0.95f)
+      + (batteryVoltage * 0.05f);
   }
 
   return filteredBatteryVoltage;
@@ -217,8 +260,6 @@ void batteryTask(void *pv) {
 
     float batteryVoltage = readBatteryVoltageADC();
 
-    float busVoltage = readBusVoltage();
-
     float current = readCurrent();
 
     float power = readPower();
@@ -233,24 +274,25 @@ void batteryTask(void *pv) {
 
     SYS.power = power;
 
-    // update estimasi tanggal tiap 5 menit
-    if (now - lastPrediction >= 300000UL) {
+    // update estimasi tanggal tiap 1 menit
+    if (now - lastPrediction >= 60000UL) {
 
       lastPrediction = now;
 
       updateBatteryPredictionDate();
     }
 
-    // simpan energy tiap 1 jam
-    if (now - lastSave >= 3600000UL) {
+    // simpan energy baterai tiap 10 menit
+    if (now - lastSave >= 600000UL) {
 
       lastSave = now;
 
       saveEnergyStats();
     }
 
+    // log debug tiap 2 menit
     static unsigned long lastLog = 0;
-    if (now - lastLog >= 300000UL) {
+    if (now - lastLog >= 120000UL) {
 
       lastLog = now;
 
