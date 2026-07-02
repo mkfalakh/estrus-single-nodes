@@ -6,11 +6,104 @@
 #include "logger.h"
 #include <SD.h>
 
-#define CSV_BUFFER_SIZE  128
-#define MAX_PARTITIONS   24
-#define MAX_RETENTION    21   // max retention_days
+#define CSV_BUFFER_SIZE 128
+#define MAX_PARTITIONS 24
+#define MAX_RETENTION 21  // max retention_days
 
 uint32_t csvRowsWritten = 0;
+
+// =====================================================
+// LOAD CSV ROWS PER-DAY
+// =====================================================
+
+uint32_t loadTodayCsvRows() {
+
+  csvRowsWritten = 0;
+
+  if (!SYS.sd_ok || !SYS.rtc_ok) {
+    return 0;
+  }
+
+  DateTime now = getNow();
+
+  char filename[32];
+
+  snprintf(
+    filename,
+    sizeof(filename),
+    "/data/%04d-%02d-%02d.csv",
+    now.year(),
+    now.month(),
+    now.day());
+
+  if (!SD.exists(filename)) {
+    return 0;
+  }
+
+  if (!takeSDMutex("CSV COUNT", pdMS_TO_TICKS(3000))) {
+    return 0;
+  }
+
+  File file = SD.open(filename);
+
+  if (!file) {
+
+    giveSDMutex();
+    return 0;
+  }
+
+  bool firstLine = true;
+
+  char line[192];
+
+  while (file.available() && file.readBytesUntil('\n', line, sizeof(line) - 1) > 0) {
+
+    if (firstLine) {
+
+      firstLine = false;  // skip header
+      continue;
+    }
+
+    csvRowsWritten++;
+  }
+
+  file.close();
+
+  giveSDMutex();
+
+  logToFile(
+    "📊 CSV rows today: %lu",
+    csvRowsWritten);
+
+  return csvRowsWritten;
+}
+
+void resetCsvRowsIfNewDay() {
+
+  if (!SYS.rtc_ok) {
+    return;
+  }
+
+  static uint8_t lastDay = 255;
+
+  uint8_t today = getNow().day();
+
+  if (lastDay == 255) {
+
+    lastDay = today;
+    return;
+  }
+
+  if (today != lastDay) {
+
+    lastDay = today;
+
+    csvRowsWritten = 0;
+
+    logToFile(
+      "📅 New day -> CSV row counter reset");
+  }
+}
 
 // =====================================================
 // PRE-COMPUTED BASELINE (in RAM, per partition)
@@ -18,10 +111,10 @@ uint32_t csvRowsWritten = 0;
 // =====================================================
 
 struct PrecomputedBaseline {
-  float    median_on_frac;
-  float    mad_on_frac;    // normalized MAD (× 1.4826)
+  float median_on_frac;
+  float mad_on_frac;  // normalized MAD (× 1.4826)
   uint16_t n_windows;
-  bool     valid;
+  bool valid;
 };
 
 static PrecomputedBaseline precomputed[MAX_PARTITIONS];
@@ -32,15 +125,14 @@ static PrecomputedBaseline precomputed[MAX_PARTITIONS];
 
 static bool getField(
   const char *line,
-  int         fieldIndex,
-  char       *out,
-  size_t      outSize)
-{
+  int fieldIndex,
+  char *out,
+  size_t outSize) {
   if (!line || !out) return false;
 
   int currentField = 0;
   const char *start = line;
-  const char *end   = line;
+  const char *end = line;
 
   while (*end) {
     if (*end == ',' || *end == '\n') {
@@ -71,8 +163,7 @@ static bool getField(
 // format: YYYY-MM-DD HH:MM:SS
 // =====================================================
 
-static int parseHour(const char *timestamp)
-{
+static int parseHour(const char *timestamp) {
   if (!timestamp || strlen(timestamp) < 13) return -1;
   char hh[3] = { timestamp[11], timestamp[12], '\0' };
   return atoi(hh);
@@ -82,12 +173,11 @@ static int parseHour(const char *timestamp)
 // HISTORICAL FILE PATH
 // =====================================================
 
-static String getHistoricalFile(int daysAgo)
-{
+static String getHistoricalFile(int daysAgo) {
   if (!SYS.rtc_ok) return "";
 
   DateTime now = getNow();
-  uint32_t ts  = now.unixtime() - (daysAgo * 86400UL);
+  uint32_t ts = now.unixtime() - (daysAgo * 86400UL);
   DateTime d(ts);
 
   char path[32];
@@ -100,11 +190,10 @@ static String getHistoricalFile(int daysAgo)
 // SORT (insertion sort — small arrays only)
 // =====================================================
 
-static void sortFloats(float *arr, uint8_t n)
-{
+static void sortFloats(float *arr, uint8_t n) {
   for (uint8_t i = 1; i < n; i++) {
     float key = arr[i];
-    int8_t j  = i - 1;
+    int8_t j = i - 1;
     while (j >= 0 && arr[j] > key) {
       arr[j + 1] = arr[j];
       j--;
@@ -113,10 +202,9 @@ static void sortFloats(float *arr, uint8_t n)
   }
 }
 
-static float medianOf(float *sorted, uint8_t n)
-{
+static float medianOf(float *sorted, uint8_t n) {
   if (n == 0) return 0.0f;
-  if (n & 1)  return sorted[n / 2];
+  if (n & 1) return sorted[n / 2];
   return (sorted[n / 2 - 1] + sorted[n / 2]) * 0.5f;
 }
 
@@ -127,8 +215,7 @@ static float medianOf(float *sorted, uint8_t n)
 // Then sort and compute median+MAD per partition.
 // =====================================================
 
-void triggerBaselineRecompute()
-{
+void triggerBaselineRecompute() {
   for (int p = 0; p < MAX_PARTITIONS; p++) precomputed[p].valid = false;
 
   if (!SYS.rtc_ok || sysConfig.partition_hours == 0) {
@@ -139,11 +226,11 @@ void triggerBaselineRecompute()
   // per-partition per-day accumulators (reset per file)
   uint32_t onCount[MAX_PARTITIONS];
   uint32_t totalCount[MAX_PARTITIONS];
-  bool     hasDirty[MAX_PARTITIONS];
+  bool hasDirty[MAX_PARTITIONS];
 
   // collected on_frac values across all files (≤ MAX_RETENTION per partition)
-  float    values[MAX_PARTITIONS][MAX_RETENTION];
-  uint8_t  valueCnt[MAX_PARTITIONS];
+  float values[MAX_PARTITIONS][MAX_RETENTION];
+  uint8_t valueCnt[MAX_PARTITIONS];
   memset(valueCnt, 0, sizeof(valueCnt));
 
   if (!takeSDMutex("recompute", pdMS_TO_TICKS(2000))) {
@@ -162,9 +249,9 @@ void triggerBaselineRecompute()
 
     f.readStringUntil('\n');  // skip header
 
-    memset(onCount,   0, sizeof(onCount));
+    memset(onCount, 0, sizeof(onCount));
     memset(totalCount, 0, sizeof(totalCount));
-    memset(hasDirty,  0, sizeof(hasDirty));
+    memset(hasDirty, 0, sizeof(hasDirty));
 
     char line[CSV_BUFFER_SIZE];
 
@@ -232,9 +319,9 @@ void triggerBaselineRecompute()
     if (normMad < 1e-4f) normMad = 1e-4f;  // floor to avoid division by zero
 
     precomputed[p].median_on_frac = med;
-    precomputed[p].mad_on_frac    = normMad;
-    precomputed[p].n_windows      = n;
-    precomputed[p].valid          = true;
+    precomputed[p].mad_on_frac = normMad;
+    precomputed[p].n_windows = n;
+    precomputed[p].valid = true;
     populated++;
   }
 
@@ -245,16 +332,15 @@ void triggerBaselineRecompute()
 // GET CACHED BASELINE (RAM only, zero SD access)
 // =====================================================
 
-bool getCachedBaseline(uint8_t   partition,
-                       float    &medianRate,
-                       float    &madRate,
-                       uint16_t &nWindows)
-{
+bool getCachedBaseline(uint8_t partition,
+                       float &medianRate,
+                       float &madRate,
+                       uint16_t &nWindows) {
   if (partition >= MAX_PARTITIONS) return false;
-  if (!precomputed[partition].valid)  return false;
+  if (!precomputed[partition].valid) return false;
 
   medianRate = precomputed[partition].median_on_frac;
-  madRate    = precomputed[partition].mad_on_frac;
-  nWindows   = precomputed[partition].n_windows;
+  madRate = precomputed[partition].mad_on_frac;
+  nWindows = precomputed[partition].n_windows;
   return true;
 }
