@@ -2,6 +2,7 @@
 #include "config.h"
 #include "system_state.h"
 #include "logger.h"
+#include "power_monitor.h"
 #include <Wire.h>
 #include <INA226_WE.h>
 
@@ -68,7 +69,7 @@ float readCurrent() {
 }
 
 float readPower() {
-  float voltage = readBusVoltage();
+  float voltage = readBatteryVoltageADC();
   float current = readCurrent();
   return voltage * current;
 }
