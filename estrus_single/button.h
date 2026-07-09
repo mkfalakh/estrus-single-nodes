@@ -6,9 +6,7 @@ enum ButtonEvent {
 
     BTN_SINGLE_CLICK,
 
-    BTN_DOUBLE_CLICK,
-
-    BTN_LONG_PRESS
+    BTN_DOUBLE_CLICK
 };
 
 void initButton();

@@ -1,6 +1,7 @@
 #include "button.h"
 #include "esp32-hal-gpio.h"
 #include "buzzer.h"
+#include "led_control.h"
 #include "config.h"
 #include "config_runtime.h"
 #include "rtc_manager.h"
@@ -9,8 +10,15 @@
 #include "logger.h"
 #include <Arduino.h>
 
+static bool restartHandled = false;
+static bool resetHandled = false;
+
+static uint32_t restartPressTs = 0;
+static uint32_t resetPressTs = 0;
+
 void initButton() {
   pinMode(BUZZER_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(RESTART_BUTTON_PIN, INPUT_PULLUP);
 }
 
 // HELPER
@@ -70,24 +78,6 @@ static void handleButtonEvent(ButtonEvent event) {
 
       break;
 
-    // =========================
-    // LONG PRESS
-    // =========================
-    case BTN_LONG_PRESS:
-
-      Serial.println("⚠️ LONG PRESS");
-
-      if (!sysIsSystemFault()) {
-
-        resetConfig();
-
-        Serial.println("⚠️ Config reset by button");
-
-        buzzerPlay(BUZZER_LONG_PRESS);
-      }
-
-      break;
-
     default:
       break;
   }
@@ -109,8 +99,7 @@ ButtonEvent getButtonEvent() {
   static bool longHandled = false;
 
   const unsigned long DEBOUNCE_MS = 50;
-  const unsigned long DOUBLE_MS = 250;
-  const unsigned long LONG_MS = 8000;
+  const unsigned long DOUBLE_MS = 200;
 
   unsigned long now = millis();
 
@@ -155,21 +144,6 @@ ButtonEvent getButtonEvent() {
 
       clickCount = 2;
     }
-  }
-
-  // =========================
-  // LONG PRESS
-  // =========================
-
-  if (current == LOW && pressStart != 0 && !longHandled && now - pressStart >= LONG_MS) {
-
-    longHandled = true;
-
-    clickCount = 0;
-
-    lastStable = current;
-
-    return BTN_LONG_PRESS;
   }
 
   // =========================
@@ -220,11 +194,93 @@ void buttonTask(void *pv) {
 
   while (true) {
 
-    ButtonEvent event = getButtonEvent();
+    ButtonEvent event =
+      getButtonEvent();
 
     if (event != BTN_NONE) {
 
       handleButtonEvent(event);
+    }
+
+    bool alarmBtn =
+      digitalRead(BUZZER_BUTTON_PIN) == LOW;
+
+    bool restartBtn =
+      digitalRead(RESTART_BUTTON_PIN) == LOW;
+
+    uint32_t now =
+      millis();
+
+    // =====================================
+    // FACTORY RESET
+    // =====================================
+
+    if (alarmBtn && restartBtn) {
+
+      if (resetPressTs == 0) {
+
+        resetPressTs = now;
+
+        restartPressTs = 0;
+
+        restartHandled = false;
+
+        ledPattern = LED_FACTORY_RESET;
+      }
+
+      if (!resetHandled && now - resetPressTs >= 5000) {
+
+        resetHandled = true;
+
+        logToFile(
+          "🧹 Factory Reset");
+
+        buzzerPlay(
+          BUZZER_LONG_PRESS);
+
+        resetConfig();
+
+        pendingRestart = true;
+      }
+
+    } else {
+
+      resetPressTs = 0;
+
+      resetHandled = false;
+    }
+
+    // =====================================
+    // RESTART ESP
+    // =====================================
+
+    if (restartBtn && !alarmBtn) {
+
+      if (restartPressTs == 0) {
+
+        restartPressTs = now;
+
+        ledPattern = LED_RESTART;
+      }
+
+      if (!restartHandled && now - restartPressTs >= 3000) {
+
+        restartHandled = true;
+
+        logToFile(
+          "🔄 Restart by button");
+
+        buzzerPlay(
+          BUZZER_STOP_CONFIRM);
+
+        pendingRestart = true;
+      }
+
+    } else {
+
+      restartPressTs = 0;
+
+      restartHandled = false;
     }
 
     vTaskDelay(
