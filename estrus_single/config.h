@@ -17,13 +17,16 @@ WIFI AP Creds: ESTRUS-NODE-xx | estrus123
 #define PROX2_PIN 15                // JANGAN DIUBAH
 
 // Pin Buzzer/Alarm
-#define BUZZER_PIN 5          // atau pin 1 / 5
+#define BUZZER_PIN 5          // JANGAN DIUBAH
 #define BUZZER_PASSIVE false  // false = tipe buzzer active | sesuaikan jenis buzzer yang dipakai (active/passive)
 #define BUZ_FREQ 2000         // untuk buzzer passive
 #define BUZ_RES 8             // untuk buzzer passive
 
 // Pin Button Alarm
 #define BUZZER_BUTTON_PIN 2  // JANGAN DIUBAH
+
+// Pin Button Restart
+#define RESTART_BUTTON_PIN 1  // JANGAN DIUBAH
 
 // I2C
 #define I2C_SDA 8  // JANGAN DIUBAH

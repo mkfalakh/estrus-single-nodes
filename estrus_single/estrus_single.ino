@@ -120,7 +120,7 @@ void loop() {
   // =========================
   if (pendingRestart && millis() > restartAt) {
 
-    logToFile("🔄 Restarting system after change device ID or update Firmware");
+    logToFile("🔄 Restarting system after change device ID or update Firmware or trigger by button");
 
     delay(500);
 
