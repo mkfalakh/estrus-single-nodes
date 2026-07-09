@@ -114,6 +114,11 @@ void initLED() {
 // led pattern
 void updateLedPattern() {
 
+  if (ledPattern == LED_FACTORY_RESET || ledPattern == LED_RESTART) {
+
+    return;
+  }
+
   if (sysIsSensor1Dirty() || sysIsSensor2Dirty()) {
 
     ledPattern = LED_SENSOR_DIRTY;
@@ -143,6 +148,8 @@ void ledTask(void *pv) {
   static LedPattern lastLedPattern = LED_NONE;
 
   while (true) {
+
+    unsigned long now = millis();
 
     updateLedPattern();
 
@@ -176,6 +183,38 @@ void ledTask(void *pv) {
             SYS.sensor2_dirty);
           break;
 
+        case LED_RESTART:
+
+          if (now - lastBlink > 120) {
+
+            lastBlink = now;
+
+            ledOn = !ledOn;
+
+            if (ledOn)
+              ledBlue();
+            else
+              ledOff();
+          }
+
+          break;
+
+        case LED_FACTORY_RESET:
+
+          if (now - lastBlink > 70) {
+
+            lastBlink = now;
+
+            ledOn = !ledOn;
+
+            if (ledOn)
+              ledRed();
+            else
+              ledOff();
+          }
+
+          break;
+
         case LED_LOW_BATTERY:
           logToFile(
             "💡 LED -> LOW BATTERY (RED) %.2f%%",
@@ -188,8 +227,6 @@ void ledTask(void *pv) {
 
       lastLedPattern = ledPattern;
     }
-
-    unsigned long now = millis();
 
     if (sysIsSensor1Dirty() || sysIsSensor2Dirty()) {
 
