@@ -13,10 +13,14 @@ enum BuzzerPattern {
 
   BUZZER_LONG_PRESS,
 
-  BUZZER_STOP_CONFIRM
+  BUZZER_STOP_CONFIRM,
+
+  BUZZER_BOOT
 };
 
 void initBuzzer();
+void buzzerOn();
+void buzzerOff();
 void checkIntervalTrigger();
 
 void buzzerTask(void *pv);

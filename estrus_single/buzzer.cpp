@@ -192,6 +192,20 @@ void buzzerTask(void *pv) {
 
     switch (buzzerPattern) {
 
+      case BUZZER_BOOT:
+
+        buzzerOn();
+        vTaskDelay(pdMS_TO_TICKS(80));
+        buzzerOff();
+
+        vTaskDelay(pdMS_TO_TICKS(60));
+
+        buzzerOn();
+        vTaskDelay(pdMS_TO_TICKS(80));
+        buzzerOff();
+
+        break;
+
       case BUZZER_LOW_BATTERY:
 
         buzzerOn();
