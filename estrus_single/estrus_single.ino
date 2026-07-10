@@ -11,6 +11,7 @@
 #include "csv_reverse.h"
 #include "config_runtime.h"
 #include "buzzer.h"
+#include "button.h"
 #include "power_monitor.h"
 #include "led_control.h"
 #include "system_state.h"
@@ -38,7 +39,19 @@ void setup() {
   initRTC();  // sysSetRTC()
   initPowerMonitor();
   initLED();
+  initButton();
+
   initBuzzer();
+
+  // test buzzer boot
+  logToFile("🔊 Buzzer Boot ON");
+  buzzerOn();
+  delay(80);
+  buzzerOff();
+  delay(60);
+  buzzerOn();
+  delay(80);
+  buzzerOff();
 
   initLogger();
 
