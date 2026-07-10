@@ -83,43 +83,37 @@ static void handleButtonEvent(ButtonEvent event) {
   }
 }
 
-ButtonEvent getButtonEvent() {
+ButtonEvent getButtonEvent(bool pressed) {
 
-  static bool lastReading = HIGH;
-  static bool stableState = HIGH;
-  static bool lastStable = HIGH;
+  static bool lastReading = false;
+  static bool stableState = false;
+  static bool lastStable = false;
 
-  static unsigned long debounceTs = 0;
+  static uint32_t debounceTs = 0;
 
-  static unsigned long pressStart = 0;
-  static unsigned long clickStart = 0;
+  static uint32_t clickStart = 0;
 
   static uint8_t clickCount = 0;
 
-  static bool longHandled = false;
+  const uint32_t DEBOUNCE_MS = 50;
+  const uint32_t DOUBLE_MS = 200;
 
-  const unsigned long DEBOUNCE_MS = 50;
-  const unsigned long DOUBLE_MS = 200;
-
-  unsigned long now = millis();
+  uint32_t now = millis();
 
   // =========================
   // DEBOUNCE
   // =========================
 
-  bool reading =
-    digitalRead(BUZZER_BUTTON_PIN);
-
-  if (reading != lastReading) {
+  if (pressed != lastReading) {
 
     debounceTs = now;
 
-    lastReading = reading;
+    lastReading = pressed;
   }
 
   if (now - debounceTs >= DEBOUNCE_MS) {
 
-    stableState = reading;
+    stableState = pressed;
   }
 
   bool current = stableState;
@@ -128,11 +122,7 @@ ButtonEvent getButtonEvent() {
   // FALLING EDGE
   // =========================
 
-  if (lastStable == HIGH && current == LOW) {
-
-    pressStart = now;
-
-    longHandled = false;
+  if (!lastStable && current) {
 
     if (clickCount == 0) {
 
@@ -144,17 +134,6 @@ ButtonEvent getButtonEvent() {
 
       clickCount = 2;
     }
-  }
-
-  // =========================
-  // RELEASE
-  // =========================
-
-  if (lastStable == LOW && current == HIGH) {
-
-    pressStart = 0;
-
-    longHandled = false;
   }
 
   // =========================
@@ -192,30 +171,54 @@ ButtonEvent getButtonEvent() {
 // BUTTON TASK
 void buttonTask(void *pv) {
 
+  vTaskDelay(pdMS_TO_TICKS(1000));
+
   while (true) {
 
-    ButtonEvent event =
-      getButtonEvent();
+    uint32_t now = millis();
 
-    if (event != BTN_NONE) {
+    int alarmRaw =
+      digitalRead(BUZZER_BUTTON_PIN);
 
-      handleButtonEvent(event);
-    }
+    int restartRaw =
+      digitalRead(RESTART_BUTTON_PIN);
 
     bool alarmBtn =
-      digitalRead(BUZZER_BUTTON_PIN) == LOW;
+      (alarmRaw == LOW);
 
     bool restartBtn =
-      digitalRead(RESTART_BUTTON_PIN) == LOW;
+      (restartRaw == LOW);
 
-    uint32_t now =
-      millis();
+    // DEBUG BUTTON
+    // logToFile(
+    //   "RAW a=%d r=%d | BOOL a=%d r=%d",
+    //   alarmRaw,
+    //   restartRaw,
+    //   alarmBtn,
+    //   restartBtn);
 
-    // =====================================
+    // ===========================
+    // SINGLE / DOUBLE CLICK
+    // ===========================
+
+    if (!restartBtn) {
+
+      ButtonEvent event =
+        getButtonEvent(alarmBtn);
+
+      if (event != BTN_NONE) {
+
+        handleButtonEvent(event);
+      }
+    }
+
+    // ===========================
     // FACTORY RESET
-    // =====================================
+    // ===========================
 
     if (alarmBtn && restartBtn) {
+
+      logToFile("ENTER FACTORY BLOCK");
 
       if (resetPressTs == 0) {
 
@@ -230,13 +233,13 @@ void buttonTask(void *pv) {
 
       if (!resetHandled && now - resetPressTs >= 5000) {
 
+        logToFile("FACTORY RESET EXECUTE");
+
         resetHandled = true;
 
-        logToFile(
-          "🧹 Factory Reset");
+        logToFile("🧹 Factory Reset");
 
-        buzzerPlay(
-          BUZZER_LONG_PRESS);
+        buzzerPlay(BUZZER_LONG_PRESS);
 
         resetConfig();
 
@@ -250,9 +253,9 @@ void buttonTask(void *pv) {
       resetHandled = false;
     }
 
-    // =====================================
-    // RESTART ESP
-    // =====================================
+    // ===========================
+    // RESTART
+    // ===========================
 
     if (restartBtn && !alarmBtn) {
 
@@ -267,11 +270,9 @@ void buttonTask(void *pv) {
 
         restartHandled = true;
 
-        logToFile(
-          "🔄 Restart by button");
+        logToFile("🔄 Restart");
 
-        buzzerPlay(
-          BUZZER_STOP_CONFIRM);
+        buzzerPlay(BUZZER_STOP_CONFIRM);
 
         pendingRestart = true;
       }
@@ -283,8 +284,7 @@ void buttonTask(void *pv) {
       restartHandled = false;
     }
 
-    vTaskDelay(
-      pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 

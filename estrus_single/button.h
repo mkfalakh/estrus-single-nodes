@@ -2,13 +2,13 @@
 
 enum ButtonEvent {
 
-    BTN_NONE,
+  BTN_NONE,
 
-    BTN_SINGLE_CLICK,
+  BTN_SINGLE_CLICK,
 
-    BTN_DOUBLE_CLICK
+  BTN_DOUBLE_CLICK
 };
 
 void initButton();
 void buttonTask(void *pv);
-ButtonEvent getButtonEvent();
+ButtonEvent getButtonEvent(bool pressed);
