@@ -65,9 +65,9 @@ void watchdogTask(void* pv) {
       "Button",
       buttonTaskHandle);
 
-    printTask(
-      "WiFi",
-      wifiTaskHandle);
+    // printTask(
+    //   "WiFi",
+    //   wifiTaskHandle);
 
     printTask(
       "webServer",
