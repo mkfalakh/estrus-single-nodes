@@ -19,7 +19,7 @@ TaskHandle_t loggerTaskHandle = NULL;
 TaskHandle_t ledTaskHandle = NULL;
 TaskHandle_t buzzerTaskHandle = NULL;
 TaskHandle_t buttonTaskHandle = NULL;
-TaskHandle_t wifiTaskHandle = NULL;
+// TaskHandle_t wifiTaskHandle = NULL;
 TaskHandle_t webServerTaskHandle = NULL;
 TaskHandle_t cleanupStorageTaskHandle = NULL;
 TaskHandle_t healthMonitorTaskHandle = NULL;
@@ -131,14 +131,14 @@ void startTasks() {
   // =====================================
   // WIFI AP
   // =====================================
-  xTaskCreatePinnedToCore(
-    wifiTask,
-    "WiFiTask",
-    4096,
-    NULL,
-    1,
-    &wifiTaskHandle,
-    0);
+  // xTaskCreatePinnedToCore(
+  //   wifiTask,
+  //   "WiFiTask",
+  //   4096,
+  //   NULL,
+  //   1,
+  //   &wifiTaskHandle,
+  //   0);
 
   // =====================================
   // WEB SERVER — core 1, prio 1 agar Sensor (prio 2) tidak terpreempt saat

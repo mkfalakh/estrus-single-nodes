@@ -8,7 +8,7 @@ extern TaskHandle_t loggerTaskHandle;
 extern TaskHandle_t ledTaskHandle;
 extern TaskHandle_t buzzerTaskHandle;
 extern TaskHandle_t buttonTaskHandle;
-extern TaskHandle_t wifiTaskHandle;
+// extern TaskHandle_t wifiTaskHandle;
 extern TaskHandle_t webServerTaskHandle;
 extern TaskHandle_t cleanupStorageTaskHandle;
 extern TaskHandle_t healthMonitorTaskHandle;
