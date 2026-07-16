@@ -95,7 +95,7 @@ void handleUpdateStatus() {
 }
 
 
-// POST /api/upload/firmware | update firmware ke versi baru
+// POST /api/update/firmware | update firmware ke versi baru
 void handleFirmwareUpload() {
 
   HTTPUpload& upload = server.upload();
