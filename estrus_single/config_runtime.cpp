@@ -184,7 +184,7 @@ void loadConfig() {
 
       // Model Estrus
       sysConfig.record_interval_sec = prefs.getUShort("record", 30);
-      sysConfig.retention_days = prefs.getUChar("retain", 7);
+      sysConfig.retention_days = prefs.getUChar("retain", 14);
       sysConfig.partition_hours = prefs.getUChar("part", 3);
       sysConfig.estrus_threshold_pct = prefs.getFloat("estrus", 75.0f);
       sysConfig.stop_after_alarm = prefs.getBool("stop_alarm", true);
@@ -234,7 +234,7 @@ void loadConfig() {
 
     // Model Estrus
     sysConfig.record_interval_sec = 30;      // 10 - 3600
-    sysConfig.retention_days = 7;            // 1 - 14
+    sysConfig.retention_days = 14;            // 1 - 14
     sysConfig.partition_hours = 3;           // 3,4,6,8,12,24 (divisor of 24, min 3)
     sysConfig.estrus_threshold_pct = 75.0f;  // 0-100 → z_threshold = val/100*4.0 → default z=3.0
     sysConfig.stop_after_alarm = true;
