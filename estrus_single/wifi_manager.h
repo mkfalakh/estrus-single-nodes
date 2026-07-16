@@ -2,8 +2,8 @@
 #include <Arduino.h>
 
 void initWiFi();
-void enableWiFiAP();
-void disableWiFiAP();
+// void enableWiFiAP();
+// void disableWiFiAP();
 bool isWiFiEnabled();
 
 extern bool wifiEnabled;
