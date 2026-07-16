@@ -62,19 +62,19 @@ static void handleButtonEvent(ButtonEvent event) {
 
       Serial.println("DOUBLE CLICK");
 
-      if (!wifiEnabled) {
+      // if (!wifiEnabled) {
 
-        enableWiFiAP();
-      }
+      //   enableWiFiAP();
+      // }
 
-      lastClientTime = millis();
+      // lastClientTime = millis();
 
-      sysTriggerWifiWake();
+      // sysTriggerWifiWake();
 
       buzzerPlay(BUZZER_DOUBLE_CLICK);
 
-      Serial.println(
-        "📡 WiFi wake by button");
+      // Serial.println(
+      //   "📡 WiFi wake by button");
 
       break;
 
