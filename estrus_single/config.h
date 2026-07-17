@@ -8,7 +8,7 @@ WIFI AP Creds: ESTRUS-NODE-xx | estrus123
 */
 
 // Device Version | ganti versi disini jika ada perubahan di firmware atau dashboard. lalu update OTA via dashboard
-#define FIRMWARE_VERSION "1.2.1"  // versioning firmware program ESP
+#define FIRMWARE_VERSION "1.2.3"  // versioning firmware program ESP
 #define WEB_VERSION "1.0.0"       // versioning web dashboard
 
 // Pin Proximity
