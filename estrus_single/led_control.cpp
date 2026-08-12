@@ -4,6 +4,7 @@
 #include "config_runtime.h"
 #include "system_state.h"
 #include "logger.h"
+#include "button.h"
 #include "power_monitor.h"
 #include <Adafruit_NeoPixel.h>
 
@@ -123,9 +124,13 @@ void updateLedPattern() {
 
     ledPattern = LED_SENSOR_DIRTY;
 
-  } else if (sysIsSystemFault() || sysIsSensor1NoActivity() || sysIsSensor2NoActivity()) {
+  } else if (sysIsSystemFault()) {
 
     ledPattern = LED_FAULT;
+
+  } else if (sysIsSensor1NoActivity() || sysIsSensor2NoActivity()) {
+
+    ledPattern = LED_NO_ACTIVITY;
 
   } else if (
     SYS.estrus && (!SYS.alarm_ack || !sysConfig.stop_after_alarm)) {
@@ -151,6 +156,18 @@ void ledTask(void *pv) {
 
     unsigned long now = millis();
 
+    // ===== BUTTON FEEDBACK OVERRIDE (non-blocking) =====
+    if (feedbackUntil != 0) {
+      if (now < feedbackUntil) {
+        ledPurple();
+        ledOn = false;
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+        continue;  // skip pattern normal selama flash berlangsung
+      } else {
+        feedbackUntil = 0;
+      }
+    }
+
     updateLedPattern();
 
     // logging transisi led
@@ -168,10 +185,15 @@ void ledTask(void *pv) {
 
         case LED_FAULT:
           logToFile(
-            "💡 LED -> FAULT (YELLOW) SD:%d RTC:%d INA:%d s1_na:%d s2_na:%d ",
+            "💡 LED -> FAULT (YELLOW) SD:%d RTC:%d INA:%d",
             SYS.sd_ok,
             SYS.rtc_ok,
-            SYS.ina_ok,
+            SYS.ina_ok);
+          break;
+
+        case LED_NO_ACTIVITY:
+          logToFile(
+            "💡 LED -> NO ACTIVITY (BLINK GREEN) s1_na:%d s2_na:%d",
             SYS.sensor1_no_activity,
             SYS.sensor2_no_activity);
           break;
@@ -184,35 +206,11 @@ void ledTask(void *pv) {
           break;
 
         case LED_RESTART:
-
-          if (now - lastBlink > 120) {
-
-            lastBlink = now;
-
-            ledOn = !ledOn;
-
-            if (ledOn)
-              ledBlue();
-            else
-              ledOff();
-          }
-
+          logToFile("💡 LED -> DEVICE RESTARTED (BLUE)");
           break;
 
         case LED_FACTORY_RESET:
-
-          if (now - lastBlink > 70) {
-
-            lastBlink = now;
-
-            ledOn = !ledOn;
-
-            if (ledOn)
-              ledRed();
-            else
-              ledOff();
-          }
-
+          logToFile("💡 LED -> DEVICE FACTORY RESET (RED)");
           break;
 
         case LED_LOW_BATTERY:
@@ -226,27 +224,6 @@ void ledTask(void *pv) {
       }
 
       lastLedPattern = ledPattern;
-    }
-
-    if (sysIsSensor1Dirty() || sysIsSensor2Dirty()) {
-
-      ledPattern = LED_SENSOR_DIRTY;
-
-    } else if (sysIsSystemFault() || sysIsSensor1NoActivity() || sysIsSensor2NoActivity()) {
-
-      ledPattern = LED_FAULT;
-
-    } else if (SYS.estrus && (!SYS.alarm_ack || !sysConfig.stop_after_alarm)) {
-
-      ledPattern = LED_ESTRUS;
-
-    } else if (sysIsLowBattery()) {
-
-      ledPattern = LED_LOW_BATTERY;
-
-    } else {
-
-      ledPattern = LED_IDLE;
     }
 
     switch (ledPattern) {
@@ -368,6 +345,44 @@ void ledTask(void *pv) {
           }
         }
 
+        break;
+
+      // ====================
+      // SENSOR NO ACTIVITY (HIJAU BLINK TERUS)
+      // ====================
+      case LED_NO_ACTIVITY:
+
+        if (now - lastBlink > (ledOn ? 300 : 2000)) {
+
+          lastBlink = now;
+
+          ledOn = !ledOn;
+
+          if (ledOn) {
+            ledGreen();
+          } else {
+            ledOff();
+          }
+        }
+
+        break;
+
+      // DEVICE RESTART
+      case LED_RESTART:
+        if (now - lastBlink > 120) {
+          lastBlink = now;
+          ledOn = !ledOn;
+          ledOn ? ledBlue() : ledOff();
+        }
+        break;
+
+      // DEVICE FACTORY RESET
+      case LED_FACTORY_RESET:
+        if (now - lastBlink > 70) {
+          lastBlink = now;
+          ledOn = !ledOn;
+          ledOn ? ledRed() : ledOff();
+        }
         break;
     }
 

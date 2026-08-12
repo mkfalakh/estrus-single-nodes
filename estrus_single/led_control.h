@@ -13,6 +13,8 @@ enum LedPattern {
 
   LED_SENSOR_DIRTY,
 
+  LED_NO_ACTIVITY,
+
   LED_LOW_BATTERY,
 
   LED_RESTART,
