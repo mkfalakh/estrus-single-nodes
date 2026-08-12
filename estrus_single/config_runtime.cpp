@@ -179,7 +179,7 @@ void loadConfig() {
 
       sysConfig.prox_active_low = prefs.getBool("prox_low", true);
       sysConfig.alarm_enabled = prefs.getBool("alarm", true);
-      sysConfig.led_brightness = prefs.getUChar("ledBright", 10);
+      sysConfig.led_brightness = prefs.getUChar("ledBright", 30);
       sysConfig.no_activity_timeout_hours = prefs.getUChar("noActivity", 12);
 
       // Model Estrus
@@ -229,7 +229,7 @@ void loadConfig() {
     strncpy(sysConfig.animal_id, "SAPI-00", sizeof(sysConfig.animal_id) - 1);
     sysConfig.prox_active_low = true;          // true = LOW trigger | false = HIGH trigger
     sysConfig.alarm_enabled = true;            // ingin alarm aktif/mati
-    sysConfig.led_brightness = 10;             // 1 - 255 | untuk brightness LED RGB
+    sysConfig.led_brightness = 30;             // 1 - 255 | untuk brightness LED RGB
     sysConfig.no_activity_timeout_hours = 12;  // 1 - 24 | untuk cek kondisi sensor jika state=0 dalam waktu lama
 
     // Model Estrus
