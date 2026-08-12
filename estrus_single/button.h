@@ -12,3 +12,4 @@ enum ButtonEvent {
 void initButton();
 void buttonTask(void *pv);
 ButtonEvent getButtonEvent(bool pressed);
+extern volatile int feedbackUntil;

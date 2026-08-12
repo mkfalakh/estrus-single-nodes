@@ -16,13 +16,23 @@ static bool resetHandled = false;
 static uint32_t restartPressTs = 0;
 static uint32_t resetPressTs = 0;
 
+const uint32_t MIN_HOLD_MS = 300;  // guard: tekan tidak sengaja diabaikan
+
+volatile int feedbackUntil = 0;
+const uint32_t FEEDBACK_MS = 150;           // durasi flash LED indikator
+const uint32_t RESTART_CLICK_MAX_MS = 200;  // sama dengan MIN_HOLD_MS, biar tidak tumpang tindih
+
+void triggerButtonFeedback() {
+  feedbackUntil = millis() + FEEDBACK_MS;
+}
+
 void initButton() {
   pinMode(BUZZER_BUTTON_PIN, INPUT_PULLUP);
   pinMode(RESTART_BUTTON_PIN, INPUT_PULLUP);
 }
 
 // HELPER
-static void handleButtonEvent(ButtonEvent event) {
+static void handleButtonEvent(ButtonEvent event, const char *btnName) {
 
   switch (event) {
 
@@ -31,7 +41,11 @@ static void handleButtonEvent(ButtonEvent event) {
     // =========================
     case BTN_SINGLE_CLICK:
 
-      Serial.println("SINGLE CLICK");
+      Serial.printf("%s single click\n", btnName);
+
+      // indikasi tombol berfungsi: buzzer + LED flash, selalu jalan
+      triggerButtonFeedback();
+      buzzerPlay(BUZZER_STOP_CONFIRM);
 
       if (sysIsAlarm()) {
 
@@ -49,8 +63,6 @@ static void handleButtonEvent(ButtonEvent event) {
           Serial.println(
             "🔕 Alarm stopped by button");
         }
-
-        buzzerPlay(BUZZER_STOP_CONFIRM);
       }
 
       break;
@@ -60,22 +72,8 @@ static void handleButtonEvent(ButtonEvent event) {
     // =========================
     case BTN_DOUBLE_CLICK:
 
-      Serial.println("DOUBLE CLICK");
-
-      // if (!wifiEnabled) {
-
-      //   enableWiFiAP();
-      // }
-
-      // lastClientTime = millis();
-
-      // sysTriggerWifiWake();
-
-      buzzerPlay(BUZZER_DOUBLE_CLICK);
-
-      // Serial.println(
-      //   "📡 WiFi wake by button");
-
+      // sudah tidak dipakai — dibiarkan tanpa aksi
+      Serial.printf("%s double click (ignored)\n", btnName);
       break;
 
     default:
@@ -173,6 +171,9 @@ void buttonTask(void *pv) {
 
   vTaskDelay(pdMS_TO_TICKS(1000));
 
+  static uint32_t restartPressStart = 0;
+  static bool restartWasPressed = false;
+
   while (true) {
 
     uint32_t now = millis();
@@ -198,18 +199,38 @@ void buttonTask(void *pv) {
     //   restartBtn);
 
     // ===========================
-    // SINGLE / DOUBLE CLICK
+    // ALARM BTN - SINGLE / DOUBLE CLICK
     // ===========================
-
     if (!restartBtn) {
-
-      ButtonEvent event =
-        getButtonEvent(alarmBtn);
-
+      ButtonEvent event = getButtonEvent(alarmBtn);
       if (event != BTN_NONE) {
-
-        handleButtonEvent(event);
+        handleButtonEvent(event, "alarmBtn");
       }
+    }
+
+    // ===========================
+    // RESTART BTN - DETEKSI KLIK PENDEK (bukan hold)
+    // ===========================
+    if (!alarmBtn) {
+
+      if (restartBtn && !restartWasPressed) {
+        restartPressStart = now;
+        restartWasPressed = true;
+      }
+
+      if (!restartBtn && restartWasPressed) {
+
+        uint32_t heldFor = now - restartPressStart;
+        restartWasPressed = false;
+
+        // hanya dianggap "klik" kalau dilepas SEBELUM masuk zona hold-action
+        if (heldFor < RESTART_CLICK_MAX_MS) {
+          handleButtonEvent(BTN_SINGLE_CLICK, "restartBtn");
+        }
+      }
+
+    } else {
+      restartWasPressed = false;
     }
 
     // ===========================
@@ -218,8 +239,6 @@ void buttonTask(void *pv) {
 
     if (alarmBtn && restartBtn) {
 
-      logToFile("ENTER FACTORY BLOCK");
-
       if (resetPressTs == 0) {
 
         resetPressTs = now;
@@ -227,7 +246,10 @@ void buttonTask(void *pv) {
         restartPressTs = 0;
 
         restartHandled = false;
+      }
 
+      if (now - resetPressTs >= MIN_HOLD_MS) {
+        Serial.println("ENTER FACTORY BLOCK");
         ledPattern = LED_FACTORY_RESET;
       }
 
@@ -237,7 +259,7 @@ void buttonTask(void *pv) {
 
         resetHandled = true;
 
-        logToFile("🧹 Factory Reset");
+        logToFile("🧹 Device Factory Reset");
 
         buzzerPlay(BUZZER_LONG_PRESS);
 
@@ -249,8 +271,8 @@ void buttonTask(void *pv) {
     } else {
 
       resetPressTs = 0;
-
       resetHandled = false;
+      if (ledPattern == LED_FACTORY_RESET) ledPattern = LED_NONE;
     }
 
     // ===========================
@@ -262,7 +284,10 @@ void buttonTask(void *pv) {
       if (restartPressTs == 0) {
 
         restartPressTs = now;
+      }
 
+      if (now - restartPressTs >= MIN_HOLD_MS) {
+        Serial.println("ENTER RESTART BLOCK");
         ledPattern = LED_RESTART;
       }
 
@@ -270,7 +295,7 @@ void buttonTask(void *pv) {
 
         restartHandled = true;
 
-        logToFile("🔄 Restart");
+        logToFile("🔄 Device Restart");
 
         buzzerPlay(BUZZER_STOP_CONFIRM);
 
@@ -280,8 +305,8 @@ void buttonTask(void *pv) {
     } else {
 
       restartPressTs = 0;
-
       restartHandled = false;
+      if (ledPattern == LED_RESTART) ledPattern = LED_NONE;
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
