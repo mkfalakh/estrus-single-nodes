@@ -94,7 +94,7 @@ ButtonEvent getButtonEvent(bool pressed) {
   static uint8_t clickCount = 0;
 
   const uint32_t DEBOUNCE_MS = 50;
-  const uint32_t DOUBLE_MS = 200;
+  const uint32_t DOUBLE_MS = 1500;
 
   uint32_t now = millis();
 
